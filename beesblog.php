@@ -124,15 +124,27 @@ class BeesBlog extends Module
         Configuration::updateGlobalValue(static::SHOW_DATE, true);
         Configuration::updateGlobalValue(static::SOCIAL_SHARING, true);
         Configuration::updateGlobalValue(static::AUTHOR_STYLE, 1);
-        Configuration::updateGlobalValue(static::MAIN_URL_KEY, 'blog');
         Configuration::updateGlobalValue(static::USE_HTML, true);
         Configuration::updateGlobalValue(static::SHOW_POST_COUNT, true);
-
         Configuration::updateGlobalValue(static::SHOW_NO_IMAGE, false);
         Configuration::updateGlobalValue(static::SHOW_CATEGORY_IMAGE, false);
-        Configuration::updateGlobalValue(static::HOME_TITLE, 'Bees blog title');
-        Configuration::updateGlobalValue(static::HOME_KEYWORDS, 'thirty bees blog,thirty bees');
-        Configuration::updateGlobalValue(static::HOME_DESCRIPTION, 'The beesiest blog for thirty bees');
+
+        $languages = Language::getLanguages(false);
+        $titles = [];
+        $keywords = [];
+        $descriptions = [];
+        $aliases = [];
+        foreach ($languages as $lang) {
+            $id = (int) $lang['id_lang'];
+            $titles[$id] = 'Bees blog title';
+            $keywords[$id] = 'thirty bees blog,thirty bees';
+            $descriptions[$id] = 'The beesiest blog for thirty bees';
+            $aliases[$id] = 'blog';
+        }
+        Configuration::updateGlobalValue(static::HOME_TITLE, $titles);
+        Configuration::updateGlobalValue(static::HOME_KEYWORDS, $keywords);
+        Configuration::updateGlobalValue(static::HOME_DESCRIPTION, $descriptions);
+        Configuration::updateGlobalValue(static::MAIN_URL_KEY, $aliases);
 
         if ($createTables) {
             if (!(BeesBlogPost::createDatabase()
@@ -369,12 +381,36 @@ class BeesBlog extends Module
      */
     public function hookModuleRoutes()
     {
-        $alias = Configuration::get(static::MAIN_URL_KEY);
+        $aliases = [];
+        foreach (Language::getLanguages(false) as $lang) {
+            $id = (int) $lang['id_lang'];
+            $value = Configuration::get(static::MAIN_URL_KEY, $id);
+            $aliases[$id] = $value ? $value : 'blog';
+        }
+
+        $list = [];
+        $listModule = [];
+        $listPagination = [];
+        $pagination = [];
+        $category = [];
+        $categoryPagination = [];
+        $catPageMod = [];
+        $post = [];
+        foreach ($aliases as $idLang => $alias) {
+            $list[$idLang] = "{$alias}/category";
+            $listModule[$idLang] = "module/{$alias}/category";
+            $listPagination[$idLang] = "{$alias}/category/page/{page}";
+            $pagination[$idLang] = "{$alias}/page/{page}";
+            $category[$idLang] = "{$alias}/category/{cat_rewrite}";
+            $categoryPagination[$idLang] = "{$alias}/category/{cat_rewrite}/page/{page}";
+            $catPageMod[$idLang] = "module/{$alias}/category/{blog_rewrite}/page/{page}";
+            $post[$idLang] = "{$alias}/{blog_rewrite}";
+        }
 
         return [
             'beesblog'                     => [
                 'controller' => 'category',
-                'rule'       => $alias,
+                'rule'       => $aliases,
                 'keywords'   => [],
                 'params'     => [
                     'fc'     => 'module',
@@ -383,7 +419,7 @@ class BeesBlog extends Module
             ],
             'beesblog_list'                => [
                 'controller' => 'category',
-                'rule'       => "{$alias}/category",
+                'rule'       => $list,
                 'keywords'   => [],
                 'params'     => [
                     'fc'     => 'module',
@@ -392,7 +428,7 @@ class BeesBlog extends Module
             ],
             'beesblog_list_module'         => [
                 'controller' => 'category',
-                'rule'       => "module/{$alias}/category",
+                'rule'       => $listModule,
                 'keywords'   => [],
                 'params'     => [
                     'fc'     => 'module',
@@ -401,7 +437,7 @@ class BeesBlog extends Module
             ],
             'beesblog_list_pagination'     => [
                 'controller' => 'category',
-                'rule'       => "{$alias}/category/page/{page}",
+                'rule'       => $listPagination,
                 'keywords'   => [
                     'page' => ['regexp' => '[_a-zA-Z0-9-\pL]*', 'param' => 'page'],
                 ],
@@ -412,7 +448,7 @@ class BeesBlog extends Module
             ],
             'beesblog_pagination'          => [
                 'controller' => 'category',
-                'rule'       => "{$alias}/page/{page}",
+                'rule'       => $pagination,
                 'keywords'   => [
                     'page' => ['regexp' => '[_a-zA-Z0-9-\pL]*', 'param' => 'page'],
                 ],
@@ -423,7 +459,7 @@ class BeesBlog extends Module
             ],
             'beesblog_category'            => [
                 'controller' => 'category',
-                'rule'       => "{$alias}/category/{cat_rewrite}",
+                'rule'       => $category,
                 'keywords'   => [
                     'cat_rewrite' => ['regexp' => '[_a-zA-Z0-9-\pL]*', 'param' => 'cat_rewrite'],
                 ],
@@ -434,7 +470,7 @@ class BeesBlog extends Module
             ],
             'beesblog_category_pagination' => [
                 'controller' => 'category',
-                'rule'       => "{$alias}/category/{cat_rewrite}/page/{page}",
+                'rule'       => $categoryPagination,
                 'keywords'   => [
                     'page'        => ['regexp' => '[_a-zA-Z0-9-\pL]*', 'param' => 'page'],
                     'cat_rewrite' => ['regexp' => '[_a-zA-Z0-9-\pL]*', 'param' => 'cat_rewrite'],
@@ -446,7 +482,7 @@ class BeesBlog extends Module
             ],
             'beesblog_cat_page_mod'        => [
                 'controller' => 'category',
-                'rule'       => "module/{$alias}/category/{blog_rewrite}/page/{page}",
+                'rule'       => $catPageMod,
                 'keywords'   => [
                     'page'         => ['regexp' => '[_a-zA-Z0-9-\pL]*', 'param' => 'page'],
                     'blog_rewrite' => ['regexp' => '[_a-zA-Z0-9-\pL]*'],
@@ -458,7 +494,7 @@ class BeesBlog extends Module
             ],
             'beesblog_post'                => [
                 'controller' => 'post',
-                'rule'       => "{$alias}/{blog_rewrite}",
+                'rule'       => $post,
                 'keywords'   => [
                     'blog_rewrite' => ['regexp' => '[_a-zA-Z0-9-\pL]+', 'param' => 'blog_rewrite'],
                 ],
@@ -655,9 +691,23 @@ class BeesBlog extends Module
     protected function postProcess()
     {
         if (Tools::isSubmit('submit'.$this->name)) {
-            Configuration::updateValue(static::HOME_TITLE, Tools::getValue(static::HOME_TITLE));
-            Configuration::updateValue(static::HOME_KEYWORDS, Tools::getValue(static::HOME_KEYWORDS));
-            Configuration::updateValue(static::HOME_DESCRIPTION, Tools::getValue(static::HOME_DESCRIPTION));
+            $languages = Language::getLanguages(false);
+            $titles = [];
+            $keywords = [];
+            $descriptions = [];
+            $aliases = [];
+            foreach ($languages as $lang) {
+                $id = (int) $lang['id_lang'];
+                $titles[$id] = Tools::getValue(static::HOME_TITLE.'_'.$id);
+                $keywords[$id] = Tools::getValue(static::HOME_KEYWORDS.'_'.$id);
+                $descriptions[$id] = Tools::getValue(static::HOME_DESCRIPTION.'_'.$id);
+                $aliases[$id] = Tools::getValue(static::MAIN_URL_KEY.'_'.$id);
+            }
+            Configuration::updateValue(static::HOME_TITLE, $titles);
+            Configuration::updateValue(static::HOME_KEYWORDS, $keywords);
+            Configuration::updateValue(static::HOME_DESCRIPTION, $descriptions);
+            Configuration::updateValue(static::MAIN_URL_KEY, $aliases);
+
             Configuration::updateValue(static::POSTS_PER_PAGE, Tools::getValue(static::POSTS_PER_PAGE));
             Configuration::updateValue(static::SHOW_POST_COUNT, Tools::getValue(static::SHOW_POST_COUNT));
             Configuration::updateValue(static::SHOW_CATEGORY_IMAGE, Tools::getValue(static::SHOW_CATEGORY_IMAGE));
@@ -665,7 +715,6 @@ class BeesBlog extends Module
             Configuration::updateValue(static::SHOW_DATE, Tools::getValue(static::SHOW_DATE));
             Configuration::updateValue(static::SOCIAL_SHARING, Tools::getValue(static::SOCIAL_SHARING));
             Configuration::updateValue(static::AUTHOR_STYLE, Tools::getValue(static::AUTHOR_STYLE));
-            Configuration::updateValue(static::MAIN_URL_KEY, Tools::getValue(static::MAIN_URL_KEY));
             Configuration::updateValue(static::USE_HTML, Tools::getValue(static::USE_HTML));
             Configuration::updateValue(static::SHOW_NO_IMAGE, Tools::getValue(static::SHOW_NO_IMAGE));
         }
@@ -715,6 +764,7 @@ class BeesBlog extends Module
                     'name'     => static::HOME_TITLE,
                     'size'     => 70,
                     'required' => true,
+                    'lang'     => true,
                 ],
                 [
                     'type'     => 'textarea',
@@ -723,6 +773,7 @@ class BeesBlog extends Module
                     'rows'     => 7,
                     'cols'     => 66,
                     'required' => true,
+                    'lang'     => true,
                 ],
                 [
                     'type'     => 'text',
@@ -730,6 +781,7 @@ class BeesBlog extends Module
                     'name'     => static::MAIN_URL_KEY,
                     'size'     => 15,
                     'required' => true,
+                    'lang'     => true,
                 ],
                 [
                     'type'     => 'select',
@@ -909,24 +961,27 @@ class BeesBlog extends Module
      */
     protected function getFormValues()
     {
-        return Configuration::getMultiple(
-            [
-                static::POSTS_PER_PAGE,
-                static::SHOW_AUTHOR,
-                static::SHOW_DATE,
-                static::SOCIAL_SHARING,
-                static::AUTHOR_STYLE,
-                static::MAIN_URL_KEY,
-                static::USE_HTML,
-                static::HOME_TITLE,
-                static::HOME_KEYWORDS,
-                static::HOME_DESCRIPTION,
-                static::SHOW_POST_COUNT,
-                static::SHOW_POST_COUNT,
-                static::SHOW_CATEGORY_IMAGE,
-                static::SHOW_NO_IMAGE,
-            ]
-        );
+        $values = Configuration::getMultiple([
+            static::POSTS_PER_PAGE,
+            static::SHOW_AUTHOR,
+            static::SHOW_DATE,
+            static::SOCIAL_SHARING,
+            static::AUTHOR_STYLE,
+            static::USE_HTML,
+            static::SHOW_POST_COUNT,
+            static::SHOW_CATEGORY_IMAGE,
+            static::SHOW_NO_IMAGE,
+        ]);
+
+        foreach (Language::getLanguages(false) as $lang) {
+            $id = (int) $lang['id_lang'];
+            $values[static::HOME_TITLE][$id] = Configuration::get(static::HOME_TITLE, $id);
+            $values[static::HOME_KEYWORDS][$id] = Configuration::get(static::HOME_KEYWORDS, $id);
+            $values[static::HOME_DESCRIPTION][$id] = Configuration::get(static::HOME_DESCRIPTION, $id);
+            $values[static::MAIN_URL_KEY][$id] = Configuration::get(static::MAIN_URL_KEY, $id);
+        }
+
+        return $values;
     }
 
     /**
