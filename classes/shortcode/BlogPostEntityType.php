@@ -3,6 +3,7 @@
 namespace BeesBlogModule;
 
 use BeesBlog;
+use Context;
 use Configuration;
 use Db;
 use DbQuery;
@@ -91,6 +92,7 @@ class BlogPostEntityType extends EntityTypeBase
             ->select('DISTINCT bl.id_bees_blog_post')
             ->from('bees_blog_post_lang', 'bl')
             ->innerJoin('bees_blog_post', 'b', '(b.id_bees_blog_post = bl.id_bees_blog_post)')
+            ->join(Shop::addSqlAssociation('bees_blog_post', 'b'))
             ->innerJoin('lang', 'l', '(l.id_lang = bl.id_lang AND l.active)')
             ->where('b.active')
             ->where('bl.lang_active');
@@ -159,9 +161,10 @@ class BlogPostEntityType extends EntityTypeBase
     {
         $conn = Db::getInstance();
         $blogposts = $conn->getArray((new DbQuery())
-            ->select('DISTINCT bl.id_bees_blog_post, bl.id_lang, bl.link_rewrite')
+            ->select('DISTINCT bl.id_bees_blog_post, bl.id_lang, bl.link_rewrite, bees_blog_post_shop.id_shop')
             ->from('bees_blog_post_lang', 'bl')
             ->innerJoin('bees_blog_post', 'b', '(b.id_bees_blog_post = bl.id_bees_blog_post)')
+            ->join(Shop::addSqlAssociation('bees_blog_post', 'b'))
             ->innerJoin('lang', 'l', '(l.id_lang = bl.id_lang AND l.active)')
             ->where('b.active')
             ->where('bl.lang_active')
@@ -169,16 +172,13 @@ class BlogPostEntityType extends EntityTypeBase
         );
 
         $mapping = [];
-        $shops = Shop::getShops(true, null, true);
-
         foreach ($blogposts as $row) {
-            foreach ($shops as $shopId) {
-                $langId = (int)$row['id_lang'];
-                $blogPostId = (int)$row['id_bees_blog_post'];
-                $linkRewrite = (string)$row['link_rewrite'];
-                $url = BeesBlog::getBeesBlogLink('beesblog_post', ['blog_rewrite' => $linkRewrite], (int)$shopId, $langId);
-                $mapping[$url] = $blogPostId;
-            }
+            $shopId = (int)$row['id_shop'];
+            $langId = (int)$row['id_lang'];
+            $blogPostId = (int)$row['id_bees_blog_post'];
+            $linkRewrite = (string)$row['link_rewrite'];
+            $url = BeesBlog::getBeesBlogLink('beesblog_post', ['blog_rewrite' => $linkRewrite], $shopId, $langId);
+            $mapping[$url] = $blogPostId;
         }
 
         return $mapping;
@@ -208,7 +208,8 @@ class BlogPostEntityType extends EntityTypeBase
      */
     protected function loadEntity(int $entityId)
     {
-        $blogpost = new BeesBlogPost($entityId);
+        $context = Context::getContext();
+        $blogpost = new BeesBlogPost($entityId, $context->language->id, $context->shop->id);
         if (Validate::isLoadedObject($blogpost)) {
             return $blogpost;
         }

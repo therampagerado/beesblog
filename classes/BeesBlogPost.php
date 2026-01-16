@@ -21,13 +21,13 @@ namespace BeesBlogModule;
 
 use BeesBlog;
 use Employee;
-use PrestaShopCollection as Collection;
 use Context;
 use Db;
 use DbQuery;
 use ObjectModel;
 use PrestaShopDatabaseException;
 use PrestaShopException;
+use Shop;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -261,35 +261,18 @@ class BeesBlogPost extends ObjectModel
      */
     public static function getPosts($idLang = null, $page = 0, $limit = 0, $count = false, $raw = false, $propertyFilter = [])
     {
-        $postCollection = new Collection('BeesBlogModule\\BeesBlogPost', $idLang);
-        $postCollection->setPageSize($limit);
-        $postCollection->setPageNumber($page);
-        $postCollection->orderBy('published', 'desc');
-        $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
-        $postCollection->where('active', '=', '1');
-        $postCollection->sqlWhere('lang_active = \'1\'');
+        $idLang = $idLang ?: (int) Context::getContext()->language->id;
+        $query = static::buildPostsQuery($idLang)
+            ->orderBy('p.`published` DESC');
 
         if ($count) {
-            return $postCollection->count();
+            $countQuery = static::buildPostsQuery($idLang, 'COUNT(DISTINCT p.`'.self::PRIMARY.'`)', false);
+            return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($countQuery);
         }
 
-        $results = $postCollection->getResults();
-
-        if ($raw) {
-            $newResults = [];
-            foreach ($postCollection as $post) {
-                if (!empty($propertyFilter)) {
-                    $newPost = [];
-                    foreach ($propertyFilter as $filter) {
-                        $newPost[$filter] = $post->{$filter};
-                    }
-                    $newResults[] = $newPost;
-                } else {
-                    $newResults[] = (array) $post;
-                }
-            }
-            $results = $newResults;
-        }
+        $rows = static::fetchPagedIds($query, $page, $limit);
+        $results = static::hydratePostsFromRows($rows, $idLang);
+        static::filterCollectionResults($results, $raw, $propertyFilter);
 
         return $results;
     }
@@ -309,34 +292,18 @@ class BeesBlogPost extends ObjectModel
      */
     public static function getPopularPosts($idLang = null, $page = 0, $limit = 0, $count = false, $raw = false, $propertyFilter = [])
     {
-        $postCollection = new Collection('BeesBlogModule\\BeesBlogPost', $idLang);
-        $postCollection->setPageSize($limit);
-        $postCollection->setPageNumber($page);
-        $postCollection->orderBy('viewed', 'desc');
-        $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
-        $postCollection->sqlWhere('lang_active = \'1\'');
+        $idLang = $idLang ?: (int) Context::getContext()->language->id;
+        $query = static::buildPostsQuery($idLang)
+            ->orderBy('p.`viewed` DESC');
 
         if ($count) {
-            return $postCollection->count();
+            $countQuery = static::buildPostsQuery($idLang, 'COUNT(DISTINCT p.`'.self::PRIMARY.'`)', false);
+            return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($countQuery);
         }
 
-        $results = $postCollection->getResults();
-
-        if ($raw) {
-            $newResults = [];
-            foreach ($postCollection as $post) {
-                if (!empty($propertyFilter)) {
-                    $newPost = [];
-                    foreach ($propertyFilter as $filter) {
-                        $newPost[$filter] = $post->{$filter};
-                    }
-                    $newResults[] = $newPost;
-                } else {
-                    $newResults[] = (array) $post;
-                }
-            }
-            $results = $newResults;
-        }
+        $rows = static::fetchPagedIds($query, $page, $limit);
+        $results = static::hydratePostsFromRows($rows, $idLang);
+        static::filterCollectionResults($results, $raw, $propertyFilter);
 
         return $results;
     }
@@ -366,9 +333,10 @@ class BeesBlogPost extends ObjectModel
      */
     public static function getBlogImage()
     {
-        $sql = new DbQuery();
-        $sql->select('`'.self::PRIMARY.'`');
-        $sql->from(self::TABLE);
+        $sql = (new DbQuery())
+            ->select('p.`'.self::PRIMARY.'`')
+            ->from(self::TABLE, 'p')
+            ->join(Shop::addSqlAssociation(self::TABLE, 'p'));
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }
@@ -394,10 +362,10 @@ class BeesBlogPost extends ObjectModel
         $sql->select('sbp.`link_rewrite`');
         $sql->from(self::TABLE, 'sbp');
         $sql->innerJoin(self::LANG_TABLE, 'sbpl', 'sbp.`'.self::PRIMARY.'` = sbpl.`'.self::PRIMARY.'`');
-        $sql->innerJoin(self::SHOP_TABLE, 'sbps', 'sbp.`'.self::PRIMARY.'` = sbps.`'.self::PRIMARY.'`');
+        $sql->join(Shop::addSqlAssociation(self::TABLE, 'sbp'));
         $sql->where('sbpl.`id_lang` = '.(int) $idLang);
         $sql->where('sbpl.`lang_active` = 1');
-        $sql->where('sbps.`id_shop` = '.(int) $idShop);
+        $sql->where('`'.self::TABLE.'_shop`.`id_shop` = '.(int) $idShop);
         $sql->where('sbp.`active` = 1');
         $sql->where('sbp.`'.self::PRIMARY.'` = '.(int) $idPost);
 
@@ -431,9 +399,9 @@ class BeesBlogPost extends ObjectModel
         $sql->select('sbp.`'.self::PRIMARY.'`');
         $sql->from(self::TABLE, 'sbp');
         $sql->innerJoin(self::LANG_TABLE, 'sbpl', 'sbp.`'.self::PRIMARY.'` = sbpl.`'.self::PRIMARY.'`');
-        $sql->innerJoin(self::SHOP_TABLE, 'sbps', 'sbp.`'.self::PRIMARY.'` = sbps.`'.self::PRIMARY.'`');
+        $sql->join(Shop::addSqlAssociation(self::TABLE, 'sbp'));
         $sql->where('sbpl.`id_lang` = '.(int) $idLang);
-        $sql->where('sbps.`id_shop` = '.(int) $idShop);
+        $sql->where('`'.self::TABLE.'_shop`.`id_shop` = '.(int) $idShop);
         $sql->where('sbp.`active` = '.(int) $active);
         $sql->where('sbpl.`lang_active`');
         $sql->where('sbpl.`link_rewrite` = \''.pSQL($rewrite).'\'');
@@ -539,6 +507,7 @@ class BeesBlogPost extends ObjectModel
     {
         return (
             parent::createDatabase($className) &&
+            static::createShopTable() &&
             static::createRelatedProductsTable()
         );
     }
@@ -554,6 +523,7 @@ class BeesBlogPost extends ObjectModel
     {
         return (
             parent::dropDatabase($className) &&
+            static::dropShopTable() &&
             static::dropRelatedProductsTable()
         );
     }
@@ -584,5 +554,122 @@ class BeesBlogPost extends ObjectModel
     public static function dropRelatedProductsTable()
     {
         return Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.'bees_blog_post_product`');
+    }
+
+    /**
+     * @return bool
+     * @throws PrestaShopException
+     */
+    protected static function createShopTable()
+    {
+        return Db::getInstance()->execute(
+            'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'bees_blog_post_shop` (
+               `id_bees_blog_post` INT(11) UNSIGNED NOT NULL,
+               `id_shop` INT(11) UNSIGNED NOT NULL,
+               PRIMARY KEY (`id_bees_blog_post`, `id_shop`),
+               KEY `id_shop` (`id_shop`)
+             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci'
+        );
+    }
+
+    /**
+     * @return bool
+     * @throws PrestaShopException
+     */
+    protected static function dropShopTable()
+    {
+        return Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.'bees_blog_post_shop`');
+    }
+
+    /**
+     * @param DbQuery $query
+     * @param int $page
+     * @param int $limit
+     *
+     * @return array
+     */
+    protected static function fetchPagedIds(DbQuery $query, $page, $limit)
+    {
+        if ($limit > 0) {
+            $page = (int) $page;
+            $offset = max($page - 1, 0) * (int) $limit;
+            $query->limit((int) $limit, $offset);
+        }
+
+        return Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($query);
+    }
+
+    /**
+     * @param int $idLang
+     * @param string|null $select
+     * @param bool $groupBy
+     *
+     * @return DbQuery
+     */
+    protected static function buildPostsQuery($idLang, $select = null, $groupBy = true)
+    {
+        $query = new DbQuery();
+        if ($select) {
+            $query->select($select);
+        } else {
+            $query->select('DISTINCT p.`'.self::PRIMARY.'`');
+        }
+        $query->from(self::TABLE, 'p');
+        $query->innerJoin(self::LANG_TABLE, 'pl', 'p.`'.self::PRIMARY.'` = pl.`'.self::PRIMARY.'`');
+        $query->join(Shop::addSqlAssociation(self::TABLE, 'p'));
+        $query->where('pl.`id_lang` = '.(int) $idLang);
+        $query->where('pl.`lang_active` = 1');
+        $query->where('p.`published` <= \''.pSQL(date('Y-m-d H:i:s')).'\'');
+        $query->where('p.`active` = 1');
+        if ($groupBy) {
+            $query->groupBy('p.`'.self::PRIMARY.'`');
+        }
+
+        return $query;
+    }
+
+    /**
+     * @param array $rows
+     * @param int $idLang
+     *
+     * @return BeesBlogPost[]
+     * @throws PrestaShopException
+     */
+    protected static function hydratePostsFromRows(array $rows, $idLang)
+    {
+        $results = [];
+        $idShop = (int) Context::getContext()->shop->id;
+        foreach ($rows as $row) {
+            $id = (int) $row[self::PRIMARY];
+            if ($id) {
+                $results[] = new BeesBlogPost($id, $idLang, $idShop);
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * @param array $results
+     * @param bool $raw
+     * @param array $propertyFilter
+     */
+    protected static function filterCollectionResults(&$results, $raw, $propertyFilter)
+    {
+        if ($raw) {
+            $newResults = [];
+            foreach ($results as $result) {
+                if (!empty($propertyFilter)) {
+                    $newPost = [];
+                    foreach ($propertyFilter as $filter) {
+                        $newPost[$filter] = $result->{$filter};
+                    }
+                    $newResults[] = $newPost;
+                } else {
+                    $newResults[] = (array) $result;
+                }
+            }
+            $results = $newResults;
+        }
     }
 }
