@@ -53,8 +53,8 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         // Retrieve the context from a static context, just because
         $this->context = Context::getContext();
 
-        // Only display this page in single store context
-        $this->multishop_context = Shop::CONTEXT_SHOP;
+        // Support multistore context
+        $this->multishop_context = Shop::CONTEXT_ALL;
 
         // Make sure that when we save the `BeesBlogCategory` ObjectModel, the `_shop` table is set, too (primary => id_shop relation)
         Shop::addTableAssociation(BeesBlogCategory::TABLE, ['type' => 'shop']);
@@ -99,6 +99,11 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
                 'orderby' => false,
             ],
         ];
+
+        $this->_join = Shop::addSqlAssociation(BeesBlogCategory::TABLE, 'a');
+        if (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) {
+            $this->_group = 'GROUP BY a.id_bees_blog_category';
+        }
 
         // With all this info set, it's about time to call the parent constructor
         parent::__construct();
@@ -236,6 +241,15 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         $this->fields_value = [
             'category_image' => $imageUrl
         ];
+
+        if (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) {
+            $this->fields_form['input'][] = [
+                'type'  => 'shop',
+                'label' => $this->l('Shop association'),
+                'name'  => 'checkBoxShopAsso',
+            ];
+            $this->fields_value['checkBoxShopAsso'] = $this->getAssociatedShopIds($id, BeesBlogCategory::SHOP_TABLE, BeesBlogCategory::PRIMARY);
+        }
 
         Media::addJsDef(['PS_ALLOW_ACCENTED_CHARS_URL' => (int) Configuration::get('PS_ALLOW_ACCENTED_CHARS_URL')]);
 
@@ -458,7 +472,7 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         if (!$blogCategory->position) {
             $blogCategory->position = 0;
         }
-        $blogCategory->id_shop = (int) Context::getContext()->shop->id;
+        $this->setShopAssociation($blogCategory);
         foreach (Language::getLanguages(false, false, true) as $idLang) {
             if (!$blogCategory->link_rewrite[$idLang]) {
                 $blogCategory->link_rewrite[$idLang] = Tools::link_rewrite($blogCategory->title[$idLang]);
@@ -545,7 +559,7 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         if (!$blogCategory->position) {
             $blogCategory->position = 0;
         }
-        $blogCategory->id_shop = (int) Context::getContext()->shop->id;
+        $this->setShopAssociation($blogCategory);
 
         $this->processImage($_FILES, $blogCategory->id);
 
@@ -652,5 +666,63 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
             }
         }
         return null;
+    }
+
+    /**
+     * @param ObjectModel $object
+     */
+    protected function setShopAssociation(ObjectModel $object)
+    {
+        $shopIds = $this->getSelectedShopIds();
+        $object->id_shop_list = $shopIds;
+        if (Shop::getContext() === Shop::CONTEXT_SHOP) {
+            $object->id_shop = (int) $this->context->shop->id;
+        }
+    }
+
+    /**
+     * @return int[]
+     */
+    protected function getSelectedShopIds()
+    {
+        if (!Shop::isFeatureActive() || Shop::getContext() === Shop::CONTEXT_SHOP) {
+            return [(int) $this->context->shop->id];
+        }
+
+        $selected = Tools::getValue('checkBoxShopAsso');
+        if (is_array($selected)) {
+            $shopIds = array_map('intval', array_keys($selected));
+            if (!$shopIds) {
+                $shopIds = array_map('intval', array_values($selected));
+            }
+            if ($shopIds) {
+                return $shopIds;
+            }
+        }
+
+        return Shop::getContextListShopID();
+    }
+
+    /**
+     * @param int $id
+     * @param string $shopTable
+     * @param string $primary
+     *
+     * @return int[]
+     */
+    protected function getAssociatedShopIds($id, $shopTable, $primary)
+    {
+        if (!$id) {
+            return Shop::getContextListShopID();
+        }
+
+        $rows = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS(
+            'SELECT `id_shop` FROM `'._DB_PREFIX_.bqSQL($shopTable).'`
+             WHERE `'.bqSQL($primary).'` = '.(int) $id
+        );
+        if (!$rows) {
+            return Shop::getContextListShopID();
+        }
+        return array_map('intval', array_column($rows, 'id_shop'));
     }
 }

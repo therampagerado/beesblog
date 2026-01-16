@@ -28,6 +28,7 @@ use DbQuery;
 use ObjectModel;
 use PrestaShopDatabaseException;
 use PrestaShopException;
+use Shop;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -264,6 +265,7 @@ class BeesBlogPost extends ObjectModel
         $postCollection = new Collection('BeesBlogModule\\BeesBlogPost', $idLang);
         $postCollection->setPageSize($limit);
         $postCollection->setPageNumber($page);
+        $postCollection->sqlJoin(Shop::addSqlAssociation(static::TABLE, 'a'));
         $postCollection->orderBy('published', 'desc');
         $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
         $postCollection->where('active', '=', '1');
@@ -312,6 +314,7 @@ class BeesBlogPost extends ObjectModel
         $postCollection = new Collection('BeesBlogModule\\BeesBlogPost', $idLang);
         $postCollection->setPageSize($limit);
         $postCollection->setPageNumber($page);
+        $postCollection->sqlJoin(Shop::addSqlAssociation(static::TABLE, 'a'));
         $postCollection->orderBy('viewed', 'desc');
         $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
         $postCollection->sqlWhere('lang_active = \'1\'');
@@ -368,7 +371,8 @@ class BeesBlogPost extends ObjectModel
     {
         $sql = new DbQuery();
         $sql->select('`'.self::PRIMARY.'`');
-        $sql->from(self::TABLE);
+        $sql->from(self::TABLE, 'sbp');
+        $sql->join(Shop::addSqlAssociation(self::TABLE, 'sbp'));
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }

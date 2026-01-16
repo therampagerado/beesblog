@@ -87,7 +87,7 @@ class BeesBlog extends Module
     {
         $this->name = 'beesblog';
         $this->tab = 'front_office_features';
-        $this->version = '1.7.0';
+        $this->version = '1.7.1';
         $this->author = 'thirty bees';
         $this->tb_min_version = '1.0.0';
         $this->tb_versions_compliancy = '> 1.0.0';
@@ -486,6 +486,7 @@ class BeesBlog extends Module
 
         // Blog posts
         $results = (new PrestaShopCollection('BeesBlogModule\\BeesBlogPost', $langId))
+            ->sqlJoin(Shop::addSqlAssociation(BeesBlogPost::TABLE, 'a'))
             ->where('active', '=', 1)
             ->getResults();
         if ($results) {
@@ -504,6 +505,7 @@ class BeesBlog extends Module
 
         // Categories
         $results = (new PrestaShopCollection('BeesBlogModule\\BeesBlogCategory', $langId))
+            ->sqlJoin(Shop::addSqlAssociation(BeesBlogCategory::TABLE, 'a'))
             ->where('active', '=', 1)
             ->getResults();
 
