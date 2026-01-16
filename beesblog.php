@@ -87,7 +87,7 @@ class BeesBlog extends Module
     {
         $this->name = 'beesblog';
         $this->tab = 'front_office_features';
-        $this->version = '1.7.0';
+        $this->version = '1.7.1';
         $this->author = 'thirty bees';
         $this->tb_min_version = '1.0.0';
         $this->tb_versions_compliancy = '> 1.0.0';
@@ -130,9 +130,9 @@ class BeesBlog extends Module
 
         Configuration::updateGlobalValue(static::SHOW_NO_IMAGE, false);
         Configuration::updateGlobalValue(static::SHOW_CATEGORY_IMAGE, false);
-        Configuration::updateGlobalValue(static::HOME_TITLE, 'Bees blog title');
-        Configuration::updateGlobalValue(static::HOME_KEYWORDS, 'thirty bees blog,thirty bees');
-        Configuration::updateGlobalValue(static::HOME_DESCRIPTION, 'The beesiest blog for thirty bees');
+        Configuration::updateValue(static::HOME_TITLE, $this->getLocalizedConfigurationValues('Bees blog title'));
+        Configuration::updateValue(static::HOME_KEYWORDS, $this->getLocalizedConfigurationValues('thirty bees blog,thirty bees'));
+        Configuration::updateValue(static::HOME_DESCRIPTION, $this->getLocalizedConfigurationValues('The beesiest blog for thirty bees'));
 
         if ($createTables) {
             if (!(BeesBlogPost::createDatabase()
@@ -715,6 +715,7 @@ class BeesBlog extends Module
                     'name'     => static::HOME_TITLE,
                     'size'     => 70,
                     'required' => true,
+                    'lang'     => true,
                 ],
                 [
                     'type'     => 'textarea',
@@ -723,6 +724,15 @@ class BeesBlog extends Module
                     'rows'     => 7,
                     'cols'     => 66,
                     'required' => true,
+                    'lang'     => true,
+                ],
+                [
+                    'type'     => 'text',
+                    'label'    => $this->l('Meta keywords'),
+                    'name'     => static::HOME_KEYWORDS,
+                    'size'     => 70,
+                    'required' => false,
+                    'lang'     => true,
                 ],
                 [
                     'type'     => 'text',
@@ -909,7 +919,7 @@ class BeesBlog extends Module
      */
     protected function getFormValues()
     {
-        return Configuration::getMultiple(
+        $values = Configuration::getMultiple(
             [
                 static::POSTS_PER_PAGE,
                 static::SHOW_AUTHOR,
@@ -918,15 +928,39 @@ class BeesBlog extends Module
                 static::AUTHOR_STYLE,
                 static::MAIN_URL_KEY,
                 static::USE_HTML,
-                static::HOME_TITLE,
-                static::HOME_KEYWORDS,
-                static::HOME_DESCRIPTION,
-                static::SHOW_POST_COUNT,
                 static::SHOW_POST_COUNT,
                 static::SHOW_CATEGORY_IMAGE,
                 static::SHOW_NO_IMAGE,
             ]
         );
+
+        $values[static::HOME_TITLE] = [];
+        $values[static::HOME_KEYWORDS] = [];
+        $values[static::HOME_DESCRIPTION] = [];
+
+        foreach (Language::getLanguages(false) as $language) {
+            $languageId = (int) $language['id_lang'];
+            $values[static::HOME_TITLE][$languageId] = Configuration::get(static::HOME_TITLE, $languageId);
+            $values[static::HOME_KEYWORDS][$languageId] = Configuration::get(static::HOME_KEYWORDS, $languageId);
+            $values[static::HOME_DESCRIPTION][$languageId] = Configuration::get(static::HOME_DESCRIPTION, $languageId);
+        }
+
+        return $values;
+    }
+
+    /**
+     * @param string $defaultValue
+     *
+     * @return array
+     */
+    protected function getLocalizedConfigurationValues($defaultValue)
+    {
+        $values = [];
+        foreach (Language::getLanguages(false) as $language) {
+            $values[(int) $language['id_lang']] = $defaultValue;
+        }
+
+        return $values;
     }
 
     /**

@@ -121,10 +121,12 @@ class BeesBlogCategoryModuleFrontController extends ModuleFrontController
         // Make a fake category if the category ID has not been given
         $category = new BeesBlogCategory();
         $category->active = true;
-        $category->title = Configuration::get(BeesBlog::HOME_TITLE);
-        $category->meta_title = Configuration::get(BeesBlog::HOME_TITLE);
-        $category->description = Configuration::get(BeesBlog::HOME_DESCRIPTION);
-        $category->meta_description = Configuration::get(BeesBlog::HOME_DESCRIPTION);
+        $languageId = (int) $this->context->language->id;
+        $category->title = Configuration::get(BeesBlog::HOME_TITLE, $languageId);
+        $category->meta_title = Configuration::get(BeesBlog::HOME_TITLE, $languageId);
+        $category->description = Configuration::get(BeesBlog::HOME_DESCRIPTION, $languageId);
+        $category->meta_description = Configuration::get(BeesBlog::HOME_DESCRIPTION, $languageId);
+        $category->meta_keywords = Configuration::get(BeesBlog::HOME_KEYWORDS, $languageId);
         return $category;
     }
 
