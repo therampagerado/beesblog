@@ -20,13 +20,13 @@
 namespace BeesBlogModule;
 
 use BeesBlog;
-use PrestaShopCollection as Collection;
 use Context;
 use Db;
 use DbQuery;
 use ObjectModel;
 use PrestaShopDatabaseException;
 use PrestaShopException;
+use Shop;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -203,20 +203,51 @@ class BeesBlogCategory extends ObjectModel
      */
     public function getPostsInCategory($idLang = null, $page = 0, $limit = 0, $count = false, $raw = false, $propertyFilter = [])
     {
-        $postCollection = new Collection('BeesBlogModule\\BeesBlogPost', $idLang);
-        $postCollection->setPageSize($limit);
-        $postCollection->setPageNumber($page);
-        $postCollection->orderBy('published', 'desc');
-        $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
-        $postCollection->where('id_category', '=', $this->id);
-        $postCollection->where('active', '=', '1');
-        $postCollection->sqlWhere('lang_active = \'1\'');
+        $idLang = $idLang ?: (int) Context::getContext()->language->id;
+        $query = new DbQuery();
+        $query->select('DISTINCT p.`'.BeesBlogPost::PRIMARY.'`');
+        $query->from(BeesBlogPost::TABLE, 'p');
+        $query->innerJoin(BeesBlogPost::LANG_TABLE, 'pl', 'p.`'.BeesBlogPost::PRIMARY.'` = pl.`'.BeesBlogPost::PRIMARY.'`');
+        $query->join(Shop::addSqlAssociation(BeesBlogPost::TABLE, 'p'));
+        $query->where('pl.`id_lang` = '.(int) $idLang);
+        $query->where('pl.`lang_active` = 1');
+        $query->where('p.`published` <= \''.pSQL(date('Y-m-d H:i:s')).'\'');
+        $query->where('p.`id_category` = '.(int) $this->id);
+        $query->where('p.`active` = 1');
+        $query->groupBy('p.`'.BeesBlogPost::PRIMARY.'`');
+        $query->orderBy('p.`published` DESC');
 
         if ($count) {
-            return $postCollection->count();
+            $countQuery = new DbQuery();
+            $countQuery->select('COUNT(DISTINCT p.`'.BeesBlogPost::PRIMARY.'`)');
+            $countQuery->from(BeesBlogPost::TABLE, 'p');
+            $countQuery->innerJoin(BeesBlogPost::LANG_TABLE, 'pl', 'p.`'.BeesBlogPost::PRIMARY.'` = pl.`'.BeesBlogPost::PRIMARY.'`');
+            $countQuery->join(Shop::addSqlAssociation(BeesBlogPost::TABLE, 'p'));
+            $countQuery->where('pl.`id_lang` = '.(int) $idLang);
+            $countQuery->where('pl.`lang_active` = 1');
+            $countQuery->where('p.`published` <= \''.pSQL(date('Y-m-d H:i:s')).'\'');
+            $countQuery->where('p.`id_category` = '.(int) $this->id);
+            $countQuery->where('p.`active` = 1');
+
+            return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($countQuery);
         }
 
-        $results = $postCollection->getResults();
+        if ($limit > 0) {
+            $page = (int) $page;
+            $offset = max($page - 1, 0) * (int) $limit;
+            $query->limit((int) $limit, $offset);
+        }
+
+        $rows = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($query);
+        $results = [];
+        $idShop = (int) Context::getContext()->shop->id;
+        foreach ($rows as $row) {
+            $id = (int) $row[BeesBlogPost::PRIMARY];
+            if ($id) {
+                $results[] = new BeesBlogPost($id, $idLang, $idShop);
+            }
+        }
+
         static::filterCollectionResults($results, $raw, $propertyFilter);
 
         return $results;
@@ -237,15 +268,37 @@ class BeesBlogCategory extends ObjectModel
      */
     public static function getCategories($idLang = null, $page = 0, $limit = 0, $count = false, $raw = false, $propertyFilter = [])
     {
-        $categoryCollection = new Collection('BeesBlogModule\\BeesBlogCategory', $idLang);
-        $categoryCollection->setPageSize($limit);
-        $categoryCollection->setPageNumber($page);
+        $idLang = $idLang ?: (int) Context::getContext()->language->id;
+        $query = new DbQuery();
+        $query->select('DISTINCT c.`'.self::PRIMARY.'`');
+        $query->from(self::TABLE, 'c');
+        $query->join(Shop::addSqlAssociation(self::TABLE, 'c'));
+        $query->groupBy('c.`'.self::PRIMARY.'`');
 
         if ($count) {
-            return $categoryCollection->count();
+            $countQuery = new DbQuery();
+            $countQuery->select('COUNT(DISTINCT c.`'.self::PRIMARY.'`)');
+            $countQuery->from(self::TABLE, 'c');
+            $countQuery->join(Shop::addSqlAssociation(self::TABLE, 'c'));
+            return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($countQuery);
         }
 
-        $results = $categoryCollection->getResults();
+        if ($limit > 0) {
+            $page = (int) $page;
+            $offset = max($page - 1, 0) * (int) $limit;
+            $query->limit((int) $limit, $offset);
+        }
+
+        $rows = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($query);
+        $results = [];
+        $idShop = (int) Context::getContext()->shop->id;
+        foreach ($rows as $row) {
+            $id = (int) $row[self::PRIMARY];
+            if ($id) {
+                $results[] = new BeesBlogCategory($id, $idLang, $idShop);
+            }
+        }
+
         static::filterCollectionResults($results, $raw, $propertyFilter);
 
         return $results;
@@ -263,12 +316,19 @@ class BeesBlogCategory extends ObjectModel
             $idLang = (int) Context::getContext()->language->id;
         }
 
-        $categoryCollection = new Collection('BeesBlogModule\\BeesBlogCategory', $idLang);
-        $categoryCollection->where('id_parent', '=', 0);
+        $query = new DbQuery();
+        $query->select('c.`'.self::PRIMARY.'`');
+        $query->from(self::TABLE, 'c');
+        $query->join(Shop::addSqlAssociation(self::TABLE, 'c'));
+        $query->where('c.`id_parent` = 0');
+        $query->orderBy('c.`'.self::PRIMARY.'` ASC');
 
-        /** @var BeesBlogCategory|false $ret */
-        $ret = $categoryCollection->getFirst();
-        return $ret;
+        $id = (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($query);
+        if ($id) {
+            return new BeesBlogCategory($id, $idLang, (int) Context::getContext()->shop->id);
+        }
+
+        return false;
     }
 
     /**
@@ -297,9 +357,9 @@ class BeesBlogCategory extends ObjectModel
         $sql->select('sbc.`'.static::PRIMARY.'`');
         $sql->from(static::TABLE, 'sbc');
         $sql->innerJoin(static::LANG_TABLE, 'sbcl', 'sbc.`'.static::PRIMARY.'` = sbcl.`'.static::PRIMARY.'`');
-        $sql->innerJoin(static::SHOP_TABLE, 'sbcs', 'sbc.`'.static::PRIMARY.'` = sbcs.`'.static::PRIMARY.'`');
+        $sql->join(Shop::addSqlAssociation(static::TABLE, 'sbc'));
         $sql->where('sbcl.`id_lang` = '.(int) $idLang);
-        $sql->where('sbcs.`id_shop` = '.(int) $idShop);
+        $sql->where('`'.static::TABLE.'_shop`.`id_shop` = '.(int) $idShop);
         $sql->where('sbc.`active` = '.(int) $active);
         $sql->where('sbcl.`link_rewrite` = \''.pSQL($rewrite).'\'');
 
@@ -373,18 +433,73 @@ class BeesBlogCategory extends ObjectModel
      */
     public static function getNameById($id, $id_lang = null)
     {
-        if (empty($idLang)) {
-            $idLang = (int) Context::getContext()->language->id;
+        if (empty($id_lang)) {
+            $id_lang = (int) Context::getContext()->language->id;
         }
 
         $sql = new DbQuery();
         $sql->select('sbcl.`title`');
         $sql->from(static::TABLE, 'sbc');
         $sql->innerJoin(static::LANG_TABLE, 'sbcl', 'sbc.`'.static::PRIMARY.'` = sbcl.`'.static::PRIMARY.'`');
-        $sql->innerJoin(static::SHOP_TABLE, 'sbcs', 'sbc.`'.static::PRIMARY.'` = sbcs.`'.static::PRIMARY.'`');
-        $sql->where('sbcl.`id_lang` = '.(int) $idLang);
+        $sql->join(Shop::addSqlAssociation(static::TABLE, 'sbc'));
+        $sql->where('sbcl.`id_lang` = '.(int) $id_lang);
         $sql->where('sbcl.`'.static::PRIMARY.'` = \''.pSQL($id).'\'');
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
+    }
+
+    /**
+     * Create the database tables for BeesBlogCategory model
+     *
+     * @param string|null $className Class name
+     * @return bool Indicates whether the database was successfully added
+     * @throws PrestaShopException
+     */
+    public static function createDatabase($className = null)
+    {
+        return (
+            parent::createDatabase($className) &&
+            static::createShopTable()
+        );
+    }
+
+    /**
+     * Drop the database for BeesBlogCategory model
+     *
+     * @param string|null $className Class name
+     * @return bool Indicates whether the database was successfully dropped
+     * @throws PrestaShopException
+     */
+    public static function dropDatabase($className = null)
+    {
+        return (
+            parent::dropDatabase($className) &&
+            static::dropShopTable()
+        );
+    }
+
+    /**
+     * @return bool
+     * @throws PrestaShopException
+     */
+    protected static function createShopTable()
+    {
+        return Db::getInstance()->execute(
+            'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'bees_blog_category_shop` (
+               `id_bees_blog_category` INT(11) UNSIGNED NOT NULL,
+               `id_shop` INT(11) UNSIGNED NOT NULL,
+               PRIMARY KEY (`id_bees_blog_category`, `id_shop`),
+               KEY `id_shop` (`id_shop`)
+             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci'
+        );
+    }
+
+    /**
+     * @return bool
+     * @throws PrestaShopException
+     */
+    protected static function dropShopTable()
+    {
+        return Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.'bees_blog_category_shop`');
     }
 }

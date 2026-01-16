@@ -87,7 +87,7 @@ class BeesBlog extends Module
     {
         $this->name = 'beesblog';
         $this->tab = 'front_office_features';
-        $this->version = '1.7.0';
+        $this->version = '1.7.1';
         $this->author = 'thirty bees';
         $this->tb_min_version = '1.0.0';
         $this->tb_versions_compliancy = '> 1.0.0';
@@ -483,40 +483,55 @@ class BeesBlog extends Module
     {
         $links = [];
         $langId = (int)Context::getContext()->language->id;
+        $shopId = (int)Context::getContext()->shop->id;
 
         // Blog posts
-        $results = (new PrestaShopCollection('BeesBlogModule\\BeesBlogPost', $langId))
-            ->where('active', '=', 1)
-            ->getResults();
-        if ($results) {
-            /** @var BeesBlogPost $result */
-            foreach ($results as $result) {
-                if ($result->lang_active) {
-                    $link = [];
-                    $link['link'] = $result->link;
-                    $link['lastmod'] = $result->date_upd;
-                    $link['type'] = 'module';
-                    $this->addImageLink($link, BeesBlogPost::getImagePath($result->id, 'post_list_item'));
-                    $links[] = $link;
-                }
+        $postQuery = new DbQuery();
+        $postQuery->select('DISTINCT p.`'.BeesBlogPost::PRIMARY.'`');
+        $postQuery->from(BeesBlogPost::TABLE, 'p');
+        $postQuery->innerJoin(BeesBlogPost::LANG_TABLE, 'pl', 'p.`'.BeesBlogPost::PRIMARY.'` = pl.`'.BeesBlogPost::PRIMARY.'`');
+        $postQuery->join(Shop::addSqlAssociation(BeesBlogPost::TABLE, 'p'));
+        $postQuery->where('pl.`id_lang` = '.$langId);
+        $postQuery->where('pl.`lang_active` = 1');
+        $postQuery->where('p.`active` = 1');
+
+        $postRows = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($postQuery);
+        foreach ($postRows as $row) {
+            $postId = (int) $row[BeesBlogPost::PRIMARY];
+            if (!$postId) {
+                continue;
             }
-        }
-
-        // Categories
-        $results = (new PrestaShopCollection('BeesBlogModule\\BeesBlogCategory', $langId))
-            ->where('active', '=', 1)
-            ->getResults();
-
-        if ($results) {
-            /** @var BeesBlogCategory $result */
-            foreach ($results as $result) {
+            $result = new BeesBlogPost($postId, $langId, $shopId);
+            if ($result->lang_active) {
                 $link = [];
                 $link['link'] = $result->link;
                 $link['lastmod'] = $result->date_upd;
                 $link['type'] = 'module';
-                $this->addImageLink($link, BeesBlogCategory::getImagePath($result->id));
+                $this->addImageLink($link, BeesBlogPost::getImagePath($result->id, 'post_list_item'));
                 $links[] = $link;
             }
+        }
+
+        // Categories
+        $categoryQuery = new DbQuery();
+        $categoryQuery->select('DISTINCT c.`'.BeesBlogCategory::PRIMARY.'`');
+        $categoryQuery->from(BeesBlogCategory::TABLE, 'c');
+        $categoryQuery->join(Shop::addSqlAssociation(BeesBlogCategory::TABLE, 'c'));
+        $categoryQuery->where('c.`active` = 1');
+
+        $categoryRows = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($categoryQuery);
+        foreach ($categoryRows as $row) {
+            $categoryId = (int) $row[BeesBlogCategory::PRIMARY];
+            if (!$categoryId) {
+                continue;
+            }
+            $result = new BeesBlogCategory($categoryId, $langId, $shopId);
+            $link = [];
+            $link['link'] = $result->link;
+            $link['lastmod'] = $result->date_upd;
+            $link['type'] = 'module';
+            $this->addImageLink($link, BeesBlogCategory::getImagePath($result->id));
+            $links[] = $link;
         }
 
         return $links;
