@@ -28,6 +28,7 @@ use DbQuery;
 use ObjectModel;
 use PrestaShopDatabaseException;
 use PrestaShopException;
+use Shop;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -368,7 +369,8 @@ class BeesBlogPost extends ObjectModel
     {
         $sql = new DbQuery();
         $sql->select('`'.self::PRIMARY.'`');
-        $sql->from(self::TABLE);
+        $sql->from(self::TABLE, 'sbp');
+        $sql->join(Shop::addSqlAssociation(self::TABLE, 'sbp'));
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }
@@ -394,10 +396,10 @@ class BeesBlogPost extends ObjectModel
         $sql->select('sbp.`link_rewrite`');
         $sql->from(self::TABLE, 'sbp');
         $sql->innerJoin(self::LANG_TABLE, 'sbpl', 'sbp.`'.self::PRIMARY.'` = sbpl.`'.self::PRIMARY.'`');
-        $sql->innerJoin(self::SHOP_TABLE, 'sbps', 'sbp.`'.self::PRIMARY.'` = sbps.`'.self::PRIMARY.'`');
+        $sql->join(Shop::addSqlAssociation(self::TABLE, 'sbp'));
         $sql->where('sbpl.`id_lang` = '.(int) $idLang);
         $sql->where('sbpl.`lang_active` = 1');
-        $sql->where('sbps.`id_shop` = '.(int) $idShop);
+        $sql->where('sbp_shop.`id_shop` = '.(int) $idShop);
         $sql->where('sbp.`active` = 1');
         $sql->where('sbp.`'.self::PRIMARY.'` = '.(int) $idPost);
 
@@ -431,9 +433,9 @@ class BeesBlogPost extends ObjectModel
         $sql->select('sbp.`'.self::PRIMARY.'`');
         $sql->from(self::TABLE, 'sbp');
         $sql->innerJoin(self::LANG_TABLE, 'sbpl', 'sbp.`'.self::PRIMARY.'` = sbpl.`'.self::PRIMARY.'`');
-        $sql->innerJoin(self::SHOP_TABLE, 'sbps', 'sbp.`'.self::PRIMARY.'` = sbps.`'.self::PRIMARY.'`');
+        $sql->join(Shop::addSqlAssociation(self::TABLE, 'sbp'));
         $sql->where('sbpl.`id_lang` = '.(int) $idLang);
-        $sql->where('sbps.`id_shop` = '.(int) $idShop);
+        $sql->where('sbp_shop.`id_shop` = '.(int) $idShop);
         $sql->where('sbp.`active` = '.(int) $active);
         $sql->where('sbpl.`lang_active`');
         $sql->where('sbpl.`link_rewrite` = \''.pSQL($rewrite).'\'');
@@ -539,6 +541,7 @@ class BeesBlogPost extends ObjectModel
     {
         return (
             parent::createDatabase($className) &&
+            static::createShopTable() &&
             static::createRelatedProductsTable()
         );
     }
@@ -554,6 +557,7 @@ class BeesBlogPost extends ObjectModel
     {
         return (
             parent::dropDatabase($className) &&
+            static::dropShopTable() &&
             static::dropRelatedProductsTable()
         );
     }
@@ -576,6 +580,24 @@ class BeesBlogPost extends ObjectModel
     }
 
     /**
+     * Creates database table to store shop associations
+     *
+     * @return boolean
+     * @throws PrestaShopException
+     */
+    public static function createShopTable()
+    {
+        return Db::getInstance()->execute(
+            'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'bees_blog_post_shop` (
+                `id_bees_blog_post` INT(11) UNSIGNED NOT NULL,
+                `id_shop` INT(11) UNSIGNED NOT NULL,
+                PRIMARY KEY (`id_bees_blog_post`, `id_shop`),
+                KEY `id_shop` (`id_shop`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci'
+        );
+    }
+
+    /**
      * Drop related products database table
      *
      * @return boolean
@@ -584,5 +606,16 @@ class BeesBlogPost extends ObjectModel
     public static function dropRelatedProductsTable()
     {
         return Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.'bees_blog_post_product`');
+    }
+
+    /**
+     * Drop shop association table
+     *
+     * @return boolean
+     * @throws PrestaShopException
+     */
+    public static function dropShopTable()
+    {
+        return Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.'bees_blog_post_shop`');
     }
 }

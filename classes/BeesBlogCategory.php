@@ -27,6 +27,7 @@ use DbQuery;
 use ObjectModel;
 use PrestaShopDatabaseException;
 use PrestaShopException;
+use Shop;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -272,6 +273,36 @@ class BeesBlogCategory extends ObjectModel
     }
 
     /**
+     * Create the database tables for BeesBlogCategory model
+     *
+     * @param string|null $className Class name
+     * @return bool Indicates whether the database was successfully added
+     * @throws PrestaShopException
+     */
+    public static function createDatabase($className = null)
+    {
+        return (
+            parent::createDatabase($className) &&
+            static::createShopTable()
+        );
+    }
+
+    /**
+     * Drop the database for BeesBlogCategory model
+     *
+     * @param string|null $className Class name
+     * @return bool Indicates whether the database was successfully dropped
+     * @throws PrestaShopException
+     */
+    public static function dropDatabase($className = null)
+    {
+        return (
+            parent::dropDatabase($className) &&
+            static::dropShopTable()
+        );
+    }
+
+    /**
      * @param string $rewrite Rewrite
      * @param bool $active Active
      * @param int|null $idLang Language ID
@@ -297,9 +328,9 @@ class BeesBlogCategory extends ObjectModel
         $sql->select('sbc.`'.static::PRIMARY.'`');
         $sql->from(static::TABLE, 'sbc');
         $sql->innerJoin(static::LANG_TABLE, 'sbcl', 'sbc.`'.static::PRIMARY.'` = sbcl.`'.static::PRIMARY.'`');
-        $sql->innerJoin(static::SHOP_TABLE, 'sbcs', 'sbc.`'.static::PRIMARY.'` = sbcs.`'.static::PRIMARY.'`');
+        $sql->join(Shop::addSqlAssociation(static::TABLE, 'sbc'));
         $sql->where('sbcl.`id_lang` = '.(int) $idLang);
-        $sql->where('sbcs.`id_shop` = '.(int) $idShop);
+        $sql->where('sbc_shop.`id_shop` = '.(int) $idShop);
         $sql->where('sbc.`active` = '.(int) $active);
         $sql->where('sbcl.`link_rewrite` = \''.pSQL($rewrite).'\'');
 
@@ -334,6 +365,35 @@ class BeesBlogCategory extends ObjectModel
         } else {
             return "{$baseLocation}{$id}-{$type}.jpg";
         }
+    }
+
+    /**
+     * Creates database table to store shop associations
+     *
+     * @return boolean
+     * @throws PrestaShopException
+     */
+    public static function createShopTable()
+    {
+        return Db::getInstance()->execute(
+            'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'bees_blog_category_shop` (
+                `id_bees_blog_category` INT(11) UNSIGNED NOT NULL,
+                `id_shop` INT(11) UNSIGNED NOT NULL,
+                PRIMARY KEY (`id_bees_blog_category`, `id_shop`),
+                KEY `id_shop` (`id_shop`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci'
+        );
+    }
+
+    /**
+     * Drop shop association table
+     *
+     * @return boolean
+     * @throws PrestaShopException
+     */
+    public static function dropShopTable()
+    {
+        return Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.'bees_blog_category_shop`');
     }
 
     /**
@@ -373,16 +433,16 @@ class BeesBlogCategory extends ObjectModel
      */
     public static function getNameById($id, $id_lang = null)
     {
-        if (empty($idLang)) {
-            $idLang = (int) Context::getContext()->language->id;
+        if (empty($id_lang)) {
+            $id_lang = (int) Context::getContext()->language->id;
         }
 
         $sql = new DbQuery();
         $sql->select('sbcl.`title`');
         $sql->from(static::TABLE, 'sbc');
         $sql->innerJoin(static::LANG_TABLE, 'sbcl', 'sbc.`'.static::PRIMARY.'` = sbcl.`'.static::PRIMARY.'`');
-        $sql->innerJoin(static::SHOP_TABLE, 'sbcs', 'sbc.`'.static::PRIMARY.'` = sbcs.`'.static::PRIMARY.'`');
-        $sql->where('sbcl.`id_lang` = '.(int) $idLang);
+        $sql->join(Shop::addSqlAssociation(static::TABLE, 'sbc'));
+        $sql->where('sbcl.`id_lang` = '.(int) $id_lang);
         $sql->where('sbcl.`'.static::PRIMARY.'` = \''.pSQL($id).'\'');
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
