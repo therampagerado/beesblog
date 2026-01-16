@@ -27,6 +27,7 @@ use DbQuery;
 use ObjectModel;
 use PrestaShopDatabaseException;
 use PrestaShopException;
+use Shop;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -206,6 +207,7 @@ class BeesBlogCategory extends ObjectModel
         $postCollection = new Collection('BeesBlogModule\\BeesBlogPost', $idLang);
         $postCollection->setPageSize($limit);
         $postCollection->setPageNumber($page);
+        $postCollection->sqlJoin(Shop::addSqlAssociation(BeesBlogPost::TABLE, 'a'));
         $postCollection->orderBy('published', 'desc');
         $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
         $postCollection->where('id_category', '=', $this->id);
@@ -240,6 +242,7 @@ class BeesBlogCategory extends ObjectModel
         $categoryCollection = new Collection('BeesBlogModule\\BeesBlogCategory', $idLang);
         $categoryCollection->setPageSize($limit);
         $categoryCollection->setPageNumber($page);
+        $categoryCollection->sqlJoin(Shop::addSqlAssociation(static::TABLE, 'a'));
 
         if ($count) {
             return $categoryCollection->count();
@@ -264,6 +267,7 @@ class BeesBlogCategory extends ObjectModel
         }
 
         $categoryCollection = new Collection('BeesBlogModule\\BeesBlogCategory', $idLang);
+        $categoryCollection->sqlJoin(Shop::addSqlAssociation(static::TABLE, 'a'));
         $categoryCollection->where('id_parent', '=', 0);
 
         /** @var BeesBlogCategory|false $ret */
@@ -373,16 +377,18 @@ class BeesBlogCategory extends ObjectModel
      */
     public static function getNameById($id, $id_lang = null)
     {
-        if (empty($idLang)) {
-            $idLang = (int) Context::getContext()->language->id;
+        if (empty($id_lang)) {
+            $id_lang = (int) Context::getContext()->language->id;
         }
+        $idShop = (int) Context::getContext()->shop->id;
 
         $sql = new DbQuery();
         $sql->select('sbcl.`title`');
         $sql->from(static::TABLE, 'sbc');
         $sql->innerJoin(static::LANG_TABLE, 'sbcl', 'sbc.`'.static::PRIMARY.'` = sbcl.`'.static::PRIMARY.'`');
         $sql->innerJoin(static::SHOP_TABLE, 'sbcs', 'sbc.`'.static::PRIMARY.'` = sbcs.`'.static::PRIMARY.'`');
-        $sql->where('sbcl.`id_lang` = '.(int) $idLang);
+        $sql->where('sbcl.`id_lang` = '.(int) $id_lang);
+        $sql->where('sbcs.`id_shop` = '.(int) $idShop);
         $sql->where('sbcl.`'.static::PRIMARY.'` = \''.pSQL($id).'\'');
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
