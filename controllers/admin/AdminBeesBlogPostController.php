@@ -57,8 +57,8 @@ class AdminBeesBlogPostController extends ModuleAdminController
         // Retrieve the context from a static context, just because
         $this->context = Context::getContext();
 
-        // Only display this page in single store context
-        $this->multishop_context = Shop::CONTEXT_SHOP;
+        // Allow all shop contexts
+        $this->multishop_context = Shop::CONTEXT_ALL;
 
         // Make sure that when we save the `BeesBlogCategory` ObjectModel, the `_shop` table is set, too (primary => id_shop relation)
         Shop::addTableAssociation(BeesBlogPost::TABLE, ['type' => 'shop']);
@@ -126,12 +126,12 @@ class AdminBeesBlogPostController extends ModuleAdminController
         ];
 
         // Set some default HelperList sortings
-        $this->_join = 'LEFT JOIN '._DB_PREFIX_.'bees_blog_post_shop sbs ON a.id_bees_blog_post = sbs.id_bees_blog_post AND sbs.id_shop IN('.implode(',', Shop::getContextListShopID()).')';
+        $this->_join = Shop::addSqlAssociation($this->table, 'a');
         $this->_defaultOrderBy = 'a.id_bees_blog_post';
         $this->_defaultOrderWay = 'DESC';
 
         if (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) {
-            $this->_group = 'GROUP BY a.bees_blog_post';
+            $this->_group = 'GROUP BY a.'.BeesBlogPost::PRIMARY;
         }
 
         // Check if there are any categories available
@@ -475,6 +475,15 @@ class AdminBeesBlogPostController extends ModuleAdminController
             'products' => $products,
         ];
 
+        if (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) {
+            $this->fields_form['input'][] = [
+                'type'  => 'shop',
+                'label' => $this->l('Shop association'),
+                'name'  => 'checkBoxShopAsso',
+            ];
+            $this->fields_value['checkBoxShopAsso'] = $this->getAssociatedShopIds($id);
+        }
+
         foreach (Language::getLanguages(true) as $language) {
             $this->fields_value['lang_active_'.(int) $language['id_lang']] = (bool) BeesBlogPost::getLangActive(Tools::getValue(BeesBlogPost::PRIMARY), $language['id_lang']);
         }
@@ -656,8 +665,11 @@ class AdminBeesBlogPostController extends ModuleAdminController
         $blogPost->id_employee = $this->context->employee->id;
         $blogPost->viewed = 0;
         $blogPost->id_shop = (int) Context::getContext()->shop->id;
+        $shopIds = $this->getShopAssociationIds();
+        $blogPost->id_shop_list = $shopIds;
 
         if ($blogPost->add()) {
+            $this->updateShopAssociations($blogPost->id, $shopIds);
             $this->processImage($_FILES, $blogPost->id);
             $this->processProducts($blogPost->id);
             $this->confirmations[] = $this->l('Successfully added post');
@@ -711,9 +723,12 @@ class AdminBeesBlogPostController extends ModuleAdminController
         $this->copyFromPost($blogPost, $this->table);
 
         $blogPost->id_shop = (int) Context::getContext()->shop->id;
+        $shopIds = $this->getShopAssociationIds();
+        $blogPost->id_shop_list = $shopIds;
         $this->processImage($_FILES, $blogPost->id);
         $this->processProducts($blogPost->id);
         if ($blogPost->update()) {
+            $this->updateShopAssociations($blogPost->id, $shopIds);
             $this->confirmations[] = $this->l('Successfully updated post');
             if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
                 $this->redirect_after = static::$currentIndex.'&'.$this->identifier.'='.$blogPost->id.'&update'.$this->table.'&token='.$this->token;
@@ -726,6 +741,71 @@ class AdminBeesBlogPostController extends ModuleAdminController
         $this->errors[] = $this->l('Unable to update post');
 
         return false;
+    }
+
+    /**
+     * @return int[]
+     */
+    protected function getShopAssociationIds()
+    {
+        if (!Shop::isFeatureActive()) {
+            return [(int)$this->context->shop->id];
+        }
+
+        if (Shop::getContext() === Shop::CONTEXT_SHOP) {
+            return [(int)$this->context->shop->id];
+        }
+
+        $shops = Tools::getValue('checkBoxShopAsso');
+        if (is_array($shops) && !empty($shops)) {
+            return array_map('intval', array_keys($shops));
+        }
+
+        return array_map('intval', Shop::getContextListShopID());
+    }
+
+    /**
+     * @param int $id
+     * @return int[]
+     */
+    protected function getAssociatedShopIds($id)
+    {
+        if (!$id) {
+            return $this->getShopAssociationIds();
+        }
+
+        $rows = Db::getInstance()->executeS(
+            'SELECT `id_shop` FROM `'._DB_PREFIX_.BeesBlogPost::SHOP_TABLE.'` WHERE `'.BeesBlogPost::PRIMARY.'` = '.(int)$id
+        );
+
+        if (!$rows) {
+            return $this->getShopAssociationIds();
+        }
+
+        return array_map('intval', array_column($rows, 'id_shop'));
+    }
+
+    /**
+     * @param int $id
+     * @param int[] $shopIds
+     *
+     * @return void
+     */
+    protected function updateShopAssociations($id, array $shopIds)
+    {
+        Db::getInstance()->delete(BeesBlogPost::SHOP_TABLE, BeesBlogPost::PRIMARY.' = '.(int)$id);
+        if (!$shopIds) {
+            return;
+        }
+
+        $insert = [];
+        foreach ($shopIds as $shopId) {
+            $insert[] = [
+                BeesBlogPost::PRIMARY => (int)$id,
+                'id_shop' => (int)$shopId,
+            ];
+        }
+        Db::getInstance()->insert(BeesBlogPost::SHOP_TABLE, $insert);
     }
 
     /**

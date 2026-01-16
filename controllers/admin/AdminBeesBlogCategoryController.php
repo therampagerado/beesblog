@@ -53,8 +53,8 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         // Retrieve the context from a static context, just because
         $this->context = Context::getContext();
 
-        // Only display this page in single store context
-        $this->multishop_context = Shop::CONTEXT_SHOP;
+        // Allow all shop contexts
+        $this->multishop_context = Shop::CONTEXT_ALL;
 
         // Make sure that when we save the `BeesBlogCategory` ObjectModel, the `_shop` table is set, too (primary => id_shop relation)
         Shop::addTableAssociation(BeesBlogCategory::TABLE, ['type' => 'shop']);
@@ -99,6 +99,11 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
                 'orderby' => false,
             ],
         ];
+
+        $this->_join = Shop::addSqlAssociation($this->table, 'a');
+        if (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) {
+            $this->_group = 'GROUP BY a.'.BeesBlogCategory::PRIMARY;
+        }
 
         // With all this info set, it's about time to call the parent constructor
         parent::__construct();
@@ -236,6 +241,15 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         $this->fields_value = [
             'category_image' => $imageUrl
         ];
+
+        if (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) {
+            $this->fields_form['input'][] = [
+                'type'  => 'shop',
+                'label' => $this->l('Shop association'),
+                'name'  => 'checkBoxShopAsso',
+            ];
+            $this->fields_value['checkBoxShopAsso'] = $this->getAssociatedShopIds($id);
+        }
 
         Media::addJsDef(['PS_ALLOW_ACCENTED_CHARS_URL' => (int) Configuration::get('PS_ALLOW_ACCENTED_CHARS_URL')]);
 
@@ -459,6 +473,8 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
             $blogCategory->position = 0;
         }
         $blogCategory->id_shop = (int) Context::getContext()->shop->id;
+        $shopIds = $this->getShopAssociationIds();
+        $blogCategory->id_shop_list = $shopIds;
         foreach (Language::getLanguages(false, false, true) as $idLang) {
             if (!$blogCategory->link_rewrite[$idLang]) {
                 $blogCategory->link_rewrite[$idLang] = Tools::link_rewrite($blogCategory->title[$idLang]);
@@ -467,6 +483,7 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
 
         // TODO: check if link_rewrite is unique
         if ($blogCategory->add()) {
+            $this->updateShopAssociations($blogCategory->id, $shopIds);
             $this->processImage($_FILES, $blogCategory->id);
             $this->confirmations[] = $this->l('Successfully added a new category');
 
@@ -546,12 +563,15 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
             $blogCategory->position = 0;
         }
         $blogCategory->id_shop = (int) Context::getContext()->shop->id;
+        $shopIds = $this->getShopAssociationIds();
+        $blogCategory->id_shop_list = $shopIds;
 
         $this->processImage($_FILES, $blogCategory->id);
 
         // TODO: check if link_rewrite is unique
 
         if ($blogCategory->update()) {
+            $this->updateShopAssociations($blogCategory->id, $shopIds);
             $this->confirmations[] = $this->l('Successfully updated the category');
 
             if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
@@ -564,6 +584,71 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         $this->errors[] = $this->l('Unable to update category');
 
         return false;
+    }
+
+    /**
+     * @return int[]
+     */
+    protected function getShopAssociationIds()
+    {
+        if (!Shop::isFeatureActive()) {
+            return [(int)$this->context->shop->id];
+        }
+
+        if (Shop::getContext() === Shop::CONTEXT_SHOP) {
+            return [(int)$this->context->shop->id];
+        }
+
+        $shops = Tools::getValue('checkBoxShopAsso');
+        if (is_array($shops) && !empty($shops)) {
+            return array_map('intval', array_keys($shops));
+        }
+
+        return array_map('intval', Shop::getContextListShopID());
+    }
+
+    /**
+     * @param int $id
+     * @return int[]
+     */
+    protected function getAssociatedShopIds($id)
+    {
+        if (!$id) {
+            return $this->getShopAssociationIds();
+        }
+
+        $rows = Db::getInstance()->executeS(
+            'SELECT `id_shop` FROM `'._DB_PREFIX_.BeesBlogCategory::SHOP_TABLE.'` WHERE `'.BeesBlogCategory::PRIMARY.'` = '.(int)$id
+        );
+
+        if (!$rows) {
+            return $this->getShopAssociationIds();
+        }
+
+        return array_map('intval', array_column($rows, 'id_shop'));
+    }
+
+    /**
+     * @param int $id
+     * @param int[] $shopIds
+     *
+     * @return void
+     */
+    protected function updateShopAssociations($id, array $shopIds)
+    {
+        Db::getInstance()->delete(BeesBlogCategory::SHOP_TABLE, BeesBlogCategory::PRIMARY.' = '.(int)$id);
+        if (!$shopIds) {
+            return;
+        }
+
+        $insert = [];
+        foreach ($shopIds as $shopId) {
+            $insert[] = [
+                BeesBlogCategory::PRIMARY => (int)$id,
+                'id_shop' => (int)$shopId,
+            ];
+        }
+        Db::getInstance()->insert(BeesBlogCategory::SHOP_TABLE, $insert);
     }
 
     /**
