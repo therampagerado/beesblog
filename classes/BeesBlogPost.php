@@ -21,13 +21,14 @@ namespace BeesBlogModule;
 
 use BeesBlog;
 use Employee;
-use PrestaShopCollection as Collection;
 use Context;
 use Db;
 use DbQuery;
 use ObjectModel;
 use PrestaShopDatabaseException;
 use PrestaShopException;
+use PrestaShopCollection as Collection;
+use Shop;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -265,6 +266,7 @@ class BeesBlogPost extends ObjectModel
         $postCollection->setPageSize($limit);
         $postCollection->setPageNumber($page);
         $postCollection->orderBy('published', 'desc');
+        $postCollection->sqlJoin(Shop::addSqlAssociation(static::TABLE, 'a'));
         $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
         $postCollection->where('active', '=', '1');
         $postCollection->sqlWhere('lang_active = \'1\'');
@@ -313,6 +315,7 @@ class BeesBlogPost extends ObjectModel
         $postCollection->setPageSize($limit);
         $postCollection->setPageNumber($page);
         $postCollection->orderBy('viewed', 'desc');
+        $postCollection->sqlJoin(Shop::addSqlAssociation(static::TABLE, 'a'));
         $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
         $postCollection->sqlWhere('lang_active = \'1\'');
 
@@ -368,7 +371,8 @@ class BeesBlogPost extends ObjectModel
     {
         $sql = new DbQuery();
         $sql->select('`'.self::PRIMARY.'`');
-        $sql->from(self::TABLE);
+        $sql->from(self::TABLE, 'sbp');
+        $sql->join(Shop::addSqlAssociation(self::TABLE, 'sbp'));
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }
@@ -389,15 +393,16 @@ class BeesBlogPost extends ObjectModel
             $idLang = (int) Context::getContext()->language->id;
         }
         $idShop = (int) Context::getContext()->shop->id;
-
         $sql = new DbQuery();
         $sql->select('sbp.`link_rewrite`');
         $sql->from(self::TABLE, 'sbp');
         $sql->innerJoin(self::LANG_TABLE, 'sbpl', 'sbp.`'.self::PRIMARY.'` = sbpl.`'.self::PRIMARY.'`');
-        $sql->innerJoin(self::SHOP_TABLE, 'sbps', 'sbp.`'.self::PRIMARY.'` = sbps.`'.self::PRIMARY.'`');
+        $sql->join(Shop::addSqlAssociation(self::TABLE, 'sbp'));
+        if ($idShop) {
+            $sql->where('sbp_shop.`id_shop` = '.(int) $idShop);
+        }
         $sql->where('sbpl.`id_lang` = '.(int) $idLang);
         $sql->where('sbpl.`lang_active` = 1');
-        $sql->where('sbps.`id_shop` = '.(int) $idShop);
         $sql->where('sbp.`active` = 1');
         $sql->where('sbp.`'.self::PRIMARY.'` = '.(int) $idPost);
 
@@ -431,9 +436,11 @@ class BeesBlogPost extends ObjectModel
         $sql->select('sbp.`'.self::PRIMARY.'`');
         $sql->from(self::TABLE, 'sbp');
         $sql->innerJoin(self::LANG_TABLE, 'sbpl', 'sbp.`'.self::PRIMARY.'` = sbpl.`'.self::PRIMARY.'`');
-        $sql->innerJoin(self::SHOP_TABLE, 'sbps', 'sbp.`'.self::PRIMARY.'` = sbps.`'.self::PRIMARY.'`');
+        $sql->join(Shop::addSqlAssociation(self::TABLE, 'sbp'));
+        if ($idShop) {
+            $sql->where('sbp_shop.`id_shop` = '.(int) $idShop);
+        }
         $sql->where('sbpl.`id_lang` = '.(int) $idLang);
-        $sql->where('sbps.`id_shop` = '.(int) $idShop);
         $sql->where('sbp.`active` = '.(int) $active);
         $sql->where('sbpl.`lang_active`');
         $sql->where('sbpl.`link_rewrite` = \''.pSQL($rewrite).'\'');

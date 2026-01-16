@@ -53,8 +53,8 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         // Retrieve the context from a static context, just because
         $this->context = Context::getContext();
 
-        // Only display this page in single store context
-        $this->multishop_context = Shop::CONTEXT_SHOP;
+        // Allow all shop contexts for association management
+        $this->multishop_context = Shop::CONTEXT_ALL;
 
         // Make sure that when we save the `BeesBlogCategory` ObjectModel, the `_shop` table is set, too (primary => id_shop relation)
         Shop::addTableAssociation(BeesBlogCategory::TABLE, ['type' => 'shop']);
@@ -99,6 +99,11 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
                 'orderby' => false,
             ],
         ];
+
+        $this->_join = Shop::addSqlAssociation(BeesBlogCategory::TABLE, 'a');
+        if (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) {
+            $this->_group = 'GROUP BY a.id_bees_blog_category';
+        }
 
         // With all this info set, it's about time to call the parent constructor
         parent::__construct();
@@ -236,6 +241,15 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         $this->fields_value = [
             'category_image' => $imageUrl
         ];
+
+        if (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) {
+            $this->fields_form['input'][] = [
+                'type'  => 'shop',
+                'label' => $this->l('Shop association'),
+                'name'  => 'checkBoxShopAsso',
+            ];
+            $this->fields_value['checkBoxShopAsso'] = $this->getAssociatedShopIds($id);
+        }
 
         Media::addJsDef(['PS_ALLOW_ACCENTED_CHARS_URL' => (int) Configuration::get('PS_ALLOW_ACCENTED_CHARS_URL')]);
 
@@ -458,7 +472,9 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         if (!$blogCategory->position) {
             $blogCategory->position = 0;
         }
-        $blogCategory->id_shop = (int) Context::getContext()->shop->id;
+        $shopIds = $this->getSelectedShopIds();
+        $blogCategory->id_shop_list = $shopIds;
+        $blogCategory->id_shop = (int) reset($shopIds);
         foreach (Language::getLanguages(false, false, true) as $idLang) {
             if (!$blogCategory->link_rewrite[$idLang]) {
                 $blogCategory->link_rewrite[$idLang] = Tools::link_rewrite($blogCategory->title[$idLang]);
@@ -468,6 +484,7 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         // TODO: check if link_rewrite is unique
         if ($blogCategory->add()) {
             $this->processImage($_FILES, $blogCategory->id);
+            $this->updateShopAssociation($blogCategory->id, $shopIds);
             $this->confirmations[] = $this->l('Successfully added a new category');
 
             if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
@@ -545,13 +562,16 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         if (!$blogCategory->position) {
             $blogCategory->position = 0;
         }
-        $blogCategory->id_shop = (int) Context::getContext()->shop->id;
+        $shopIds = $this->getSelectedShopIds();
+        $blogCategory->id_shop_list = $shopIds;
+        $blogCategory->id_shop = (int) reset($shopIds);
 
         $this->processImage($_FILES, $blogCategory->id);
 
         // TODO: check if link_rewrite is unique
 
         if ($blogCategory->update()) {
+            $this->updateShopAssociation($blogCategory->id, $shopIds);
             $this->confirmations[] = $this->l('Successfully updated the category');
 
             if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
@@ -646,11 +666,77 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
     {
         $id = (int)Tools::getValue(BeesBlogCategory::PRIMARY);
         if ($id) {
-            $category = new BeesBlogCategory($id, $this->context->language->id);
+            $category = new BeesBlogCategory($id, $this->context->language->id, $this->context->shop->id);
             if (Validate::isLoadedObject($category)) {
                 return $category->link;
             }
         }
         return null;
+    }
+
+    /**
+     * @param int $id
+     *
+     * @return int[]
+     */
+    protected function getAssociatedShopIds($id)
+    {
+        $id = (int) $id;
+        if (!$id) {
+            return Shop::getContextListShopID();
+        }
+        $rows = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS(
+            'SELECT id_shop FROM '._DB_PREFIX_.BeesBlogCategory::SHOP_TABLE.' WHERE '.BeesBlogCategory::PRIMARY.' = '.$id
+        );
+        if (!$rows) {
+            return Shop::getContextListShopID();
+        }
+        return array_map('intval', array_column($rows, 'id_shop'));
+    }
+
+    /**
+     * @return int[]
+     */
+    protected function getSelectedShopIds()
+    {
+        if (!Shop::isFeatureActive()) {
+            return [(int) $this->context->shop->id];
+        }
+
+        if (Shop::getContext() === Shop::CONTEXT_SHOP) {
+            return [(int) $this->context->shop->id];
+        }
+
+        $selected = Tools::getValue('checkBoxShopAsso');
+        if (is_array($selected) && $selected) {
+            return array_map('intval', $selected);
+        }
+
+        return Shop::getContextListShopID();
+    }
+
+    /**
+     * @param int $categoryId
+     * @param int[] $shopIds
+     *
+     * @return void
+     */
+    protected function updateShopAssociation($categoryId, array $shopIds)
+    {
+        $categoryId = (int) $categoryId;
+        Db::getInstance()->delete(BeesBlogCategory::SHOP_TABLE, BeesBlogCategory::PRIMARY.' = '.$categoryId);
+
+        if (!$shopIds) {
+            return;
+        }
+
+        $rows = [];
+        foreach ($shopIds as $shopId) {
+            $rows[] = [
+                BeesBlogCategory::PRIMARY => $categoryId,
+                'id_shop' => (int) $shopId,
+            ];
+        }
+        Db::getInstance()->insert(BeesBlogCategory::SHOP_TABLE, $rows);
     }
 }
