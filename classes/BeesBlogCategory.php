@@ -20,7 +20,6 @@
 namespace BeesBlogModule;
 
 use BeesBlog;
-use PrestaShopCollection as Collection;
 use Configuration;
 use Context;
 use Db;

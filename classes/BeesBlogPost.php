@@ -21,7 +21,6 @@ namespace BeesBlogModule;
 
 use BeesBlog;
 use Employee;
-use PrestaShopCollection as Collection;
 use Configuration;
 use Context;
 use Db;

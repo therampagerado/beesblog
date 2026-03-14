@@ -167,14 +167,12 @@ class BeesBlogImageType extends ObjectModel
             die(Tools::displayError());
         }
 
-        Db::getInstance()->executeS(
-            '
-			SELECT `id_image_type`
-			FROM `'._DB_PREFIX_.'image_type`
-			WHERE `name` = \''.pSQL($typeName).'\''
+        return (bool) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue(
+            (new DbQuery())
+                ->select(static::PRIMARY)
+                ->from(static::TABLE)
+                ->where('`name` = \''.pSQL($typeName).'\'')
         );
-
-        return Db::getInstance()->NumRows();
     }
 
     /**
@@ -254,13 +252,13 @@ class BeesBlogImageType extends ObjectModel
     public static function getBasicTypeIds()
     {
         static::ensureShopAssociations();
-        $idShop = Context::getContext()->shop->id;
+        $shopIds = static::getContextShopIds();
 
         $sql = new DbQuery();
-        $sql->select('it.'.static::PRIMARY);
+        $sql->select('DISTINCT it.'.static::PRIMARY);
         $sql->from(static::TABLE, 'it');
         $sql->innerJoin(static::SHOP_TABLE, 'its', 'its.`'.static::PRIMARY.'` = it.`'.static::PRIMARY.'`');
-        $sql->where('its.`id_shop` = '.(int) $idShop);
+        $sql->where('its.`id_shop` IN ('.implode(', ', $shopIds).')');
         $sql->where('it.`name` IN (\'post_list_item\', \'post_default\', \'category_default\')');
 
         $result = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
@@ -282,42 +280,44 @@ class BeesBlogImageType extends ObjectModel
     public static function installBasics()
     {
         static::ensureShopAssociations();
-        $basicTypes = ['post_list_item', 'post_default', 'category_default'];
-        $shops = Shop::getShops(false, null, true);
+        $basicTypes = static::getBasicTypeDefinitions();
+        $shops = array_map('intval', Shop::getShops(false, null, true));
 
         $reflection = new ReflectionClass(__CLASS__);
         $consts = $reflection->getConstants();
 
-        foreach ($basicTypes as $basicType) {
-            foreach ($shops as $idShop) {
-                $sql = new DbQuery();
-                $sql->select('it.'.static::PRIMARY);
-                $sql->from(static::TABLE, 'it');
-                $sql->innerJoin(static::SHOP_TABLE, 'its', 'its.`'.static::PRIMARY.'` = it.`'.static::PRIMARY.'`');
-                $sql->where('its.`id_shop` = '.(int) $idShop);
-                $sql->where("name = '{$basicType}'");
-
-                if (!Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql)) {
-                    Db::getInstance()->insert(
-                        static::TABLE,
-                        [
-                            'name'       => $basicType,
-                            'width'      => $consts[strtoupper($basicType).'_WIDTH'],
-                            'height'     => $consts[strtoupper($basicType).'_HEIGHT'],
-                            'posts'      => substr($basicType, 0, 4) === 'post',
-                            'categories' => substr($basicType, 0, 4) !== 'post',
-                        ]
-                    );
-                    Db::getInstance()->insert(
-                        static::SHOP_TABLE,
-                        [
-                            static::PRIMARY => (int) Db::getInstance()->Insert_ID(),
-                            'id_shop'       => (int) $idShop,
-                        ]
-                    );
-                }
+        foreach ($basicTypes as $basicType => $basicTypeData) {
+            $canonicalId = static::getCanonicalTypeId($basicType);
+            if (!$canonicalId) {
+                Db::getInstance()->insert(
+                    static::TABLE,
+                    [
+                        'name'       => $basicType,
+                        'width'      => $consts[strtoupper($basicType).'_WIDTH'],
+                        'height'     => $consts[strtoupper($basicType).'_HEIGHT'],
+                        'posts'      => (int) $basicTypeData['posts'],
+                        'categories' => (int) $basicTypeData['categories'],
+                    ]
+                );
+                $canonicalId = (int) Db::getInstance()->Insert_ID();
+            } else {
+                Db::getInstance()->update(
+                    static::TABLE,
+                    [
+                        'width'      => (int) $consts[strtoupper($basicType).'_WIDTH'],
+                        'height'     => (int) $consts[strtoupper($basicType).'_HEIGHT'],
+                        'posts'      => (int) $basicTypeData['posts'],
+                        'categories' => (int) $basicTypeData['categories'],
+                    ],
+                    static::PRIMARY.' = '.(int) $canonicalId
+                );
             }
+
+            static::associateTypeToShops($canonicalId, $shops);
+            static::mergeDuplicateBasicTypes($basicType, $canonicalId);
         }
+
+        static::clearCaches();
     }
 
     /**
@@ -329,5 +329,138 @@ class BeesBlogImageType extends ObjectModel
     protected static function ensureShopAssociations()
     {
         \BeesBlog::registerShopAssociations();
+    }
+
+    /**
+     * Returns reserved basic type definitions keyed by type name.
+     *
+     * @return array[]
+     */
+    protected static function getBasicTypeDefinitions()
+    {
+        return [
+            'post_list_item'  => ['posts' => true,  'categories' => false],
+            'post_default'    => ['posts' => true,  'categories' => false],
+            'category_default'=> ['posts' => false, 'categories' => true],
+        ];
+    }
+
+    /**
+     * Returns the active shop IDs for the current context.
+     *
+     * @return int[]
+     * @throws PrestaShopException
+     */
+    protected static function getContextShopIds()
+    {
+        $shopIds = array_map('intval', Shop::getContextListShopID());
+        if (!$shopIds) {
+            $shopId = (int) Context::getContext()->shop->id;
+            if (!$shopId) {
+                $shopId = (int) Configuration::get('PS_SHOP_DEFAULT');
+            }
+            $shopIds = [$shopId];
+        }
+
+        return $shopIds;
+    }
+
+    /**
+     * Returns the canonical image type ID for a reserved basic name.
+     *
+     * @param string $typeName
+     *
+     * @return int
+     */
+    protected static function getCanonicalTypeId($typeName)
+    {
+        return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue(
+            (new DbQuery())
+                ->select(static::PRIMARY)
+                ->from(static::TABLE)
+                ->where('`name` = \''.pSQL($typeName).'\'')
+                ->orderBy('`'.static::PRIMARY.'` ASC')
+        );
+    }
+
+    /**
+     * Ensures the given image type is associated with all provided shops.
+     *
+     * @param int $imageTypeId
+     * @param int[] $shopIds
+     *
+     * @return void
+     */
+    protected static function associateTypeToShops($imageTypeId, array $shopIds)
+    {
+        if (!$imageTypeId || !$shopIds) {
+            return;
+        }
+
+        $rows = [];
+        foreach ($shopIds as $shopId) {
+            $rows[] = [
+                static::PRIMARY => (int) $imageTypeId,
+                'id_shop'       => (int) $shopId,
+            ];
+        }
+        Db::getInstance()->insert(static::SHOP_TABLE, $rows, false, true, Db::INSERT_IGNORE);
+    }
+
+    /**
+     * Merges duplicate reserved image types into one canonical record.
+     *
+     * @param string $typeName
+     * @param int $canonicalId
+     *
+     * @return void
+     */
+    protected static function mergeDuplicateBasicTypes($typeName, $canonicalId)
+    {
+        $duplicates = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS(
+            (new DbQuery())
+                ->select(static::PRIMARY)
+                ->from(static::TABLE)
+                ->where('`name` = \''.pSQL($typeName).'\'')
+                ->where('`'.static::PRIMARY.'` != '.(int) $canonicalId)
+                ->orderBy('`'.static::PRIMARY.'` ASC')
+        );
+
+        if (!is_array($duplicates) || !$duplicates) {
+            return;
+        }
+
+        foreach ($duplicates as $duplicate) {
+            $duplicateId = (int) $duplicate[static::PRIMARY];
+            if (!$duplicateId) {
+                continue;
+            }
+
+            $shopIds = array_map('intval', array_column(
+                Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS(
+                    (new DbQuery())
+                        ->select('id_shop')
+                        ->from(static::SHOP_TABLE)
+                        ->where('`'.static::PRIMARY.'` = '.(int) $duplicateId)
+                ) ?: [],
+                'id_shop'
+            ));
+
+            static::associateTypeToShops($canonicalId, $shopIds);
+
+            Db::getInstance()->delete(static::SHOP_TABLE, '`'.static::PRIMARY.'` = '.(int) $duplicateId);
+            Db::getInstance()->delete(static::TABLE, '`'.static::PRIMARY.'` = '.(int) $duplicateId);
+        }
+    }
+
+    /**
+     * Clears in-memory lookup caches after structural changes.
+     *
+     * @return void
+     */
+    protected static function clearCaches()
+    {
+        static::$imagesTypesCache = [];
+        static::$imagesTypesNameCache = [];
     }
 }
