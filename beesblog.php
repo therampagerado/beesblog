@@ -87,7 +87,7 @@ class BeesBlog extends Module
     {
         $this->name = 'beesblog';
         $this->tab = 'front_office_features';
-        $this->version = '1.7.1';
+        $this->version = '1.7.2';
         $this->author = 'thirty bees';
         $this->tb_min_version = '1.0.0';
         $this->tb_versions_compliancy = '> 1.0.0';
@@ -98,8 +98,22 @@ class BeesBlog extends Module
         $this->badges = ['beta'];
 
         parent::__construct();
+        static::registerShopAssociations();
         $this->displayName = $this->l('Bees Blog');
         $this->description = $this->l('thirty bees blog module');
+    }
+
+    /**
+     * Registers all multistore associations used by this module.
+     *
+     * @return void
+     * @throws PrestaShopException
+     */
+    public static function registerShopAssociations()
+    {
+        Shop::addTableAssociation(BeesBlogCategory::TABLE, ['type' => 'shop']);
+        Shop::addTableAssociation(BeesBlogPost::TABLE, ['type' => 'shop']);
+        Shop::addTableAssociation(BeesBlogImageType::TABLE, ['type' => 'shop']);
     }
 
     /**
@@ -118,6 +132,8 @@ class BeesBlog extends Module
         if (!parent::install()) {
             return false;
         }
+
+        static::registerShopAssociations();
 
         Configuration::updateGlobalValue(static::POSTS_PER_PAGE, 5);
         Configuration::updateGlobalValue(static::SHOW_AUTHOR, true);
@@ -1130,8 +1146,7 @@ class BeesBlog extends Module
      */
     protected function installFixtures()
     {
-        Shop::addTableAssociation(BeesBlogCategory::TABLE, ['type' => 'shop']);
-        Shop::addTableAssociation(BeesBlogPost::TABLE, ['type' => 'shop']);
+        static::registerShopAssociations();
 
         $category = new BeesBlogCategory();
         $category->active = true;

@@ -21,12 +21,14 @@ namespace BeesBlogModule;
 
 use BeesBlog;
 use PrestaShopCollection as Collection;
+use Configuration;
 use Context;
 use Db;
 use DbQuery;
 use ObjectModel;
 use PrestaShopDatabaseException;
 use PrestaShopException;
+use Shop;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -144,6 +146,7 @@ class BeesBlogCategory extends ObjectModel
      */
     public function __construct($id = null, $idLang = null, $idShop = null)
     {
+        static::ensureShopAssociations();
         parent::__construct($id, $idLang, $idShop);
         $this->resolveAssociations($idLang, $idShop);
     }
@@ -203,23 +206,7 @@ class BeesBlogCategory extends ObjectModel
      */
     public function getPostsInCategory($idLang = null, $page = 0, $limit = 0, $count = false, $raw = false, $propertyFilter = [])
     {
-        $postCollection = new Collection('BeesBlogModule\\BeesBlogPost', $idLang);
-        $postCollection->setPageSize($limit);
-        $postCollection->setPageNumber($page);
-        $postCollection->orderBy('published', 'desc');
-        $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
-        $postCollection->where('id_category', '=', $this->id);
-        $postCollection->where('active', '=', '1');
-        $postCollection->sqlWhere('lang_active = \'1\'');
-
-        if ($count) {
-            return $postCollection->count();
-        }
-
-        $results = $postCollection->getResults();
-        static::filterCollectionResults($results, $raw, $propertyFilter);
-
-        return $results;
+        return BeesBlogPost::getPostsByCategory($this->id, $idLang, $page, $limit, $count, $raw, $propertyFilter);
     }
 
     /**
@@ -237,15 +224,44 @@ class BeesBlogCategory extends ObjectModel
      */
     public static function getCategories($idLang = null, $page = 0, $limit = 0, $count = false, $raw = false, $propertyFilter = [])
     {
-        $categoryCollection = new Collection('BeesBlogModule\\BeesBlogCategory', $idLang);
-        $categoryCollection->setPageSize($limit);
-        $categoryCollection->setPageNumber($page);
-
-        if ($count) {
-            return $categoryCollection->count();
+        static::ensureShopAssociations();
+        if ($idLang === null) {
+            $idLang = (int) Context::getContext()->language->id;
         }
 
-        $results = $categoryCollection->getResults();
+        $shopIds = static::getContextShopIds();
+        $sql = new DbQuery();
+        if ($count) {
+            $sql->select('COUNT(DISTINCT sbc.`'.static::PRIMARY.'`)');
+        } else {
+            $sql->select('DISTINCT sbc.`'.static::PRIMARY.'`');
+        }
+        $sql->from(static::TABLE, 'sbc');
+        $sql->innerJoin(static::LANG_TABLE, 'sbcl', 'sbc.`'.static::PRIMARY.'` = sbcl.`'.static::PRIMARY.'`');
+        $sql->innerJoin(static::SHOP_TABLE, 'sbcs', 'sbc.`'.static::PRIMARY.'` = sbcs.`'.static::PRIMARY.'`');
+        $sql->where('sbcl.`id_lang` = '.(int) $idLang);
+        $sql->where('sbcs.`id_shop` IN ('.implode(', ', $shopIds).')');
+
+        if ($count) {
+            return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
+        }
+
+        $sql->orderBy('sbc.`position` asc, sbc.`'.static::PRIMARY.'` asc');
+        if ($limit > 0) {
+            $page = max(1, (int) $page);
+            $sql->limit((int) $limit, ($page - 1) * (int) $limit);
+        }
+
+        $rows = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
+        if (!is_array($rows) || !$rows) {
+            return [];
+        }
+
+        $results = [];
+        $hydrateShopId = static::getHydrationShopId($shopIds);
+        foreach ($rows as $row) {
+            $results[] = new static((int) $row[static::PRIMARY], (int) $idLang, $hydrateShopId);
+        }
         static::filterCollectionResults($results, $raw, $propertyFilter);
 
         return $results;
@@ -259,16 +275,28 @@ class BeesBlogCategory extends ObjectModel
      */
     public static function getRootCategory($idLang = null)
     {
+        static::ensureShopAssociations();
         if (!$idLang) {
             $idLang = (int) Context::getContext()->language->id;
         }
+        $shopIds = static::getContextShopIds();
 
-        $categoryCollection = new Collection('BeesBlogModule\\BeesBlogCategory', $idLang);
-        $categoryCollection->where('id_parent', '=', 0);
+        $sql = new DbQuery();
+        $sql->select('DISTINCT sbc.`'.static::PRIMARY.'`');
+        $sql->from(static::TABLE, 'sbc');
+        $sql->innerJoin(static::LANG_TABLE, 'sbcl', 'sbc.`'.static::PRIMARY.'` = sbcl.`'.static::PRIMARY.'`');
+        $sql->innerJoin(static::SHOP_TABLE, 'sbcs', 'sbc.`'.static::PRIMARY.'` = sbcs.`'.static::PRIMARY.'`');
+        $sql->where('sbcl.`id_lang` = '.(int) $idLang);
+        $sql->where('sbcs.`id_shop` IN ('.implode(', ', $shopIds).')');
+        $sql->where('sbc.`id_parent` = 0');
+        $sql->orderBy('sbc.`position` asc, sbc.`'.static::PRIMARY.'` asc');
 
-        /** @var BeesBlogCategory|false $ret */
-        $ret = $categoryCollection->getFirst();
-        return $ret;
+        $id = (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
+        if (!$id) {
+            return false;
+        }
+
+        return new static($id, (int) $idLang, static::getHydrationShopId($shopIds));
     }
 
     /**
@@ -283,6 +311,7 @@ class BeesBlogCategory extends ObjectModel
      */
     public static function getIdByRewrite($rewrite, $active = true, $idLang = null, $idShop = null)
     {
+        static::ensureShopAssociations();
         if (empty($rewrite)) {
             return false;
         }
@@ -371,10 +400,16 @@ class BeesBlogCategory extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getNameById($id, $idLang = null)
+    public static function getNameById($id, $idLang = null, $idShop = null)
     {
+        static::ensureShopAssociations();
         if (empty($idLang)) {
             $idLang = (int) Context::getContext()->language->id;
+        }
+
+        $shopIds = $idShop === null ? array_map('intval', Shop::getContextListShopID()) : [(int) $idShop];
+        if (!$shopIds) {
+            $shopIds = [(int) Context::getContext()->shop->id ?: (int) Configuration::get('PS_SHOP_DEFAULT')];
         }
 
         $sql = new DbQuery();
@@ -383,8 +418,62 @@ class BeesBlogCategory extends ObjectModel
         $sql->innerJoin(static::LANG_TABLE, 'sbcl', 'sbc.`'.static::PRIMARY.'` = sbcl.`'.static::PRIMARY.'`');
         $sql->innerJoin(static::SHOP_TABLE, 'sbcs', 'sbc.`'.static::PRIMARY.'` = sbcs.`'.static::PRIMARY.'`');
         $sql->where('sbcl.`id_lang` = '.(int) $idLang);
+        $sql->where('sbcs.`id_shop` IN ('.implode(', ', $shopIds).')');
         $sql->where('sbcl.`'.static::PRIMARY.'` = \''.pSQL($id).'\'');
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
+    }
+
+    /**
+     * Ensures shop associations are registered before multistore queries run.
+     *
+     * @return void
+     * @throws PrestaShopException
+     */
+    protected static function ensureShopAssociations()
+    {
+        BeesBlog::registerShopAssociations();
+    }
+
+    /**
+     * Returns the active shop IDs for the current context.
+     *
+     * @return int[]
+     * @throws PrestaShopException
+     */
+    protected static function getContextShopIds()
+    {
+        $shopIds = array_map('intval', Shop::getContextListShopID());
+        if (!$shopIds) {
+            $shopId = (int) Context::getContext()->shop->id;
+            if (!$shopId) {
+                $shopId = (int) Configuration::get('PS_SHOP_DEFAULT');
+            }
+            $shopIds = [$shopId];
+        }
+
+        return $shopIds;
+    }
+
+    /**
+     * Returns a single shop ID to use when hydrating shop-aware ObjectModels.
+     *
+     * @param int[] $shopIds
+     *
+     * @return int
+     * @throws PrestaShopException
+     */
+    protected static function getHydrationShopId(array $shopIds)
+    {
+        $shopId = (int) Context::getContext()->shop->id;
+        if ($shopId) {
+            return $shopId;
+        }
+
+        if ($shopIds) {
+            return (int) reset($shopIds);
+        }
+
+        return (int) Configuration::get('PS_SHOP_DEFAULT');
     }
 }

@@ -53,8 +53,8 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         // Retrieve the context from a static context, just because
         $this->context = Context::getContext();
 
-        // Only display this page in single store context
-        $this->multishop_context = Shop::CONTEXT_SHOP;
+        // Allow managing category associations in every multistore context
+        $this->multishop_context = Shop::CONTEXT_ALL | Shop::CONTEXT_GROUP | Shop::CONTEXT_SHOP;
 
         // Make sure that when we save the `BeesBlogCategory` ObjectModel, the `_shop` table is set, too (primary => id_shop relation)
         Shop::addTableAssociation(BeesBlogCategory::TABLE, ['type' => 'shop']);
@@ -232,6 +232,8 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
                 ],
             ],
         ];
+
+        $this->addShopAssociationField($id);
 
         $this->fields_value = [
             'category_image' => $imageUrl
@@ -418,10 +420,11 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         if (!$blogCategory->position) {
             $blogCategory->position = 0;
         }
-        $blogCategory->id_shop = (int) Context::getContext()->shop->id;
+        $blogCategory->id_shop = $this->getEditingShopId();
         // TODO: check if link_rewrite is unique
         if ($blogCategory->add()) {
             $this->processImage($_FILES, $blogCategory->id);
+            $this->updateAssoShop($blogCategory->id);
             $this->confirmations[] = $this->l('Successfully added a new category');
 
             if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
@@ -490,7 +493,8 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
             return false;
         }
 
-        $blogCategory = new BeesBlogCategory((int) Tools::getValue(BeesBlogCategory::PRIMARY));
+        $categoryId = (int) Tools::getValue(BeesBlogCategory::PRIMARY);
+        $blogCategory = new BeesBlogCategory($categoryId, null, $this->getEditingShopId($categoryId));
         $this->copyFromPost($blogCategory, $this->table);
         $this->normalizeTranslatedCategoryFields($blogCategory);
         if (!$blogCategory->id_parent) {
@@ -500,13 +504,14 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         if (!$blogCategory->position) {
             $blogCategory->position = 0;
         }
-        $blogCategory->id_shop = (int) Context::getContext()->shop->id;
+        $blogCategory->id_shop = $this->getEditingShopId($blogCategory->id);
 
         $this->processImage($_FILES, $blogCategory->id);
 
         // TODO: check if link_rewrite is unique
 
         if ($blogCategory->update()) {
+            $this->updateAssoShop($blogCategory->id);
             $this->confirmations[] = $this->l('Successfully updated the category');
 
             if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
@@ -601,7 +606,7 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
     {
         $id = (int)Tools::getValue(BeesBlogCategory::PRIMARY);
         if ($id) {
-            $category = new BeesBlogCategory($id, $this->context->language->id);
+            $category = new BeesBlogCategory($id, $this->context->language->id, $this->getEditingShopId($id));
             if (Validate::isLoadedObject($category)) {
                 return $category->link;
             }
@@ -656,5 +661,78 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         }
 
         return $value;
+    }
+
+    /**
+     * Adds the multistore shop association chooser to the form.
+     *
+     * @param int $categoryId
+     *
+     * @return void
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function addShopAssociationField($categoryId)
+    {
+        $associations = [];
+        if (Shop::isFeatureActive()) {
+            if ($categoryId) {
+                $associations[$categoryId] = $this->getAssociatedShopIds($categoryId);
+            }
+            $this->fields_form['shop_associations'] = json_encode($associations);
+            $this->fields_form['input'][] = [
+                'type'   => 'shop',
+                'label'  => $this->l('Shop association'),
+                'name'   => 'checkBoxShopAsso',
+                'values' => Shop::getTree(),
+            ];
+        }
+    }
+
+    /**
+     * @param int $categoryId
+     *
+     * @return int[]
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function getAssociatedShopIds($categoryId)
+    {
+        return array_map('intval', array_column(
+            Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS(
+                'SELECT id_shop FROM `'._DB_PREFIX_.BeesBlogCategory::SHOP_TABLE.'` WHERE `'.BeesBlogCategory::PRIMARY.'` = '.(int) $categoryId
+            ) ?: [],
+            'id_shop'
+        ));
+    }
+
+    /**
+     * Returns a concrete shop ID to use when the current context is not scoped to one shop.
+     *
+     * @param int|null $categoryId
+     *
+     * @return int
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function getEditingShopId($categoryId = null)
+    {
+        if ((int) $this->context->shop->id) {
+            return (int) $this->context->shop->id;
+        }
+
+        $submittedShops = array_keys((array) Tools::getArrayValue('checkBoxShopAsso_'.$this->table));
+        if ($submittedShops) {
+            return (int) reset($submittedShops);
+        }
+
+        if ($categoryId) {
+            $associatedShops = $this->getAssociatedShopIds((int) $categoryId);
+            if ($associatedShops) {
+                return (int) reset($associatedShops);
+            }
+        }
+
+        return (int) Configuration::get('PS_SHOP_DEFAULT');
     }
 }

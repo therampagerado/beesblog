@@ -57,8 +57,8 @@ class AdminBeesBlogPostController extends ModuleAdminController
         // Retrieve the context from a static context, just because
         $this->context = Context::getContext();
 
-        // Only display this page in single store context
-        $this->multishop_context = Shop::CONTEXT_SHOP;
+        // Allow managing post associations in every multistore context
+        $this->multishop_context = Shop::CONTEXT_ALL | Shop::CONTEXT_GROUP | Shop::CONTEXT_SHOP;
 
         // Make sure that when we save the `BeesBlogCategory` ObjectModel, the `_shop` table is set, too (primary => id_shop relation)
         Shop::addTableAssociation(BeesBlogPost::TABLE, ['type' => 'shop']);
@@ -131,7 +131,7 @@ class AdminBeesBlogPostController extends ModuleAdminController
         $this->_defaultOrderWay = 'DESC';
 
         if (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) {
-            $this->_group = 'GROUP BY a.bees_blog_post';
+            $this->_group = 'GROUP BY a.`'.BeesBlogPost::PRIMARY.'`';
         }
 
         // Check if there are any categories available
@@ -470,6 +470,8 @@ class AdminBeesBlogPostController extends ModuleAdminController
             ],
         ];
 
+        $this->addShopAssociationField($id);
+
         $this->fields_value = [
             'post_image' => $imageUrl,
             'products' => $products,
@@ -615,11 +617,12 @@ class AdminBeesBlogPostController extends ModuleAdminController
 
         $blogPost->id_employee = $this->context->employee->id;
         $blogPost->viewed = 0;
-        $blogPost->id_shop = (int) Context::getContext()->shop->id;
+        $blogPost->id_shop = $this->getEditingShopId();
 
         if ($blogPost->add()) {
             $this->processImage($_FILES, $blogPost->id);
             $this->processProducts($blogPost->id);
+            $this->updateAssoShop($blogPost->id);
             $this->confirmations[] = $this->l('Successfully added post');
             if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
                 $this->redirect_after = static::$currentIndex.'&'.$this->identifier.'='.$blogPost->id.'&update'.$this->table.'&token='.$this->token;
@@ -666,15 +669,17 @@ class AdminBeesBlogPostController extends ModuleAdminController
             return false;
         }
 
-        $blogPost = new BeesBlogPost((int) Tools::getValue(BeesBlogPost::PRIMARY));
+        $postId = (int) Tools::getValue(BeesBlogPost::PRIMARY);
+        $blogPost = new BeesBlogPost($postId, null, $this->getEditingShopId($postId));
         $blogPost->lang_active = [];
         $this->copyFromPost($blogPost, $this->table);
         $this->normalizeTranslatedPostFields($blogPost);
 
-        $blogPost->id_shop = (int) Context::getContext()->shop->id;
+        $blogPost->id_shop = $this->getEditingShopId($blogPost->id);
         $this->processImage($_FILES, $blogPost->id);
         $this->processProducts($blogPost->id);
         if ($blogPost->update()) {
+            $this->updateAssoShop($blogPost->id);
             $this->confirmations[] = $this->l('Successfully updated post');
             if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
                 $this->redirect_after = static::$currentIndex.'&'.$this->identifier.'='.$blogPost->id.'&update'.$this->table.'&token='.$this->token;
@@ -813,7 +818,7 @@ class AdminBeesBlogPostController extends ModuleAdminController
     {
         $id = (int)Tools::getValue(BeesBlogPost::PRIMARY);
         if ($id) {
-            $post = new BeesBlogPost($id, $this->context->language->id);
+            $post = new BeesBlogPost($id, $this->context->language->id, $this->getEditingShopId($id));
             return $post->link;
         }
         return null;
@@ -870,5 +875,78 @@ class AdminBeesBlogPostController extends ModuleAdminController
         }
 
         return $value;
+    }
+
+    /**
+     * Adds the multistore shop association chooser to the form.
+     *
+     * @param int $postId
+     *
+     * @return void
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function addShopAssociationField($postId)
+    {
+        $associations = [];
+        if (Shop::isFeatureActive()) {
+            if ($postId) {
+                $associations[$postId] = $this->getAssociatedShopIds($postId);
+            }
+            $this->fields_form['shop_associations'] = json_encode($associations);
+            $this->fields_form['input'][] = [
+                'type'   => 'shop',
+                'label'  => $this->l('Shop association'),
+                'name'   => 'checkBoxShopAsso',
+                'values' => Shop::getTree(),
+            ];
+        }
+    }
+
+    /**
+     * @param int $postId
+     *
+     * @return int[]
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function getAssociatedShopIds($postId)
+    {
+        return array_map('intval', array_column(
+            Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS(
+                'SELECT id_shop FROM `'._DB_PREFIX_.BeesBlogPost::SHOP_TABLE.'` WHERE `'.BeesBlogPost::PRIMARY.'` = '.(int) $postId
+            ) ?: [],
+            'id_shop'
+        ));
+    }
+
+    /**
+     * Returns a concrete shop ID to use when the current context is not scoped to one shop.
+     *
+     * @param int|null $postId
+     *
+     * @return int
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function getEditingShopId($postId = null)
+    {
+        if ((int) $this->context->shop->id) {
+            return (int) $this->context->shop->id;
+        }
+
+        $submittedShops = array_keys((array) Tools::getArrayValue('checkBoxShopAsso_'.$this->table));
+        if ($submittedShops) {
+            return (int) reset($submittedShops);
+        }
+
+        if ($postId) {
+            $associatedShops = $this->getAssociatedShopIds((int) $postId);
+            if ($associatedShops) {
+                return (int) reset($associatedShops);
+            }
+        }
+
+        return (int) Configuration::get('PS_SHOP_DEFAULT');
     }
 }

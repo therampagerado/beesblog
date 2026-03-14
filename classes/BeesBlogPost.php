@@ -22,12 +22,14 @@ namespace BeesBlogModule;
 use BeesBlog;
 use Employee;
 use PrestaShopCollection as Collection;
+use Configuration;
 use Context;
 use Db;
 use DbQuery;
 use ObjectModel;
 use PrestaShopDatabaseException;
 use PrestaShopException;
+use Shop;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -196,6 +198,7 @@ class BeesBlogPost extends ObjectModel
      */
     public function __construct($id = null, $idLang = null, $idShop = null)
     {
+        static::ensureShopAssociations();
         parent::__construct($id, $idLang, $idShop);
 
         $this->image_dir = _PS_IMG_DIR_ . '/beesblog/' . static::IMAGE_TYPE;
@@ -261,37 +264,7 @@ class BeesBlogPost extends ObjectModel
      */
     public static function getPosts($idLang = null, $page = 0, $limit = 0, $count = false, $raw = false, $propertyFilter = [])
     {
-        $postCollection = new Collection('BeesBlogModule\\BeesBlogPost', $idLang);
-        $postCollection->setPageSize($limit);
-        $postCollection->setPageNumber($page);
-        $postCollection->orderBy('published', 'desc');
-        $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
-        $postCollection->where('active', '=', '1');
-        $postCollection->sqlWhere('lang_active = \'1\'');
-
-        if ($count) {
-            return $postCollection->count();
-        }
-
-        $results = $postCollection->getResults();
-
-        if ($raw) {
-            $newResults = [];
-            foreach ($postCollection as $post) {
-                if (!empty($propertyFilter)) {
-                    $newPost = [];
-                    foreach ($propertyFilter as $filter) {
-                        $newPost[$filter] = $post->{$filter};
-                    }
-                    $newResults[] = $newPost;
-                } else {
-                    $newResults[] = (array) $post;
-                }
-            }
-            $results = $newResults;
-        }
-
-        return $results;
+        return static::getShopScopedPosts($idLang, $page, $limit, $count, $raw, $propertyFilter, 'published', 'desc');
     }
 
     /**
@@ -309,36 +282,36 @@ class BeesBlogPost extends ObjectModel
      */
     public static function getPopularPosts($idLang = null, $page = 0, $limit = 0, $count = false, $raw = false, $propertyFilter = [])
     {
-        $postCollection = new Collection('BeesBlogModule\\BeesBlogPost', $idLang);
-        $postCollection->setPageSize($limit);
-        $postCollection->setPageNumber($page);
-        $postCollection->orderBy('viewed', 'desc');
-        $postCollection->where('published', '<=', date('Y-m-d H:i:s'));
-        $postCollection->sqlWhere('lang_active = \'1\'');
+        return static::getShopScopedPosts($idLang, $page, $limit, $count, $raw, $propertyFilter, 'viewed', 'desc');
+    }
 
-        if ($count) {
-            return $postCollection->count();
-        }
-
-        $results = $postCollection->getResults();
-
-        if ($raw) {
-            $newResults = [];
-            foreach ($postCollection as $post) {
-                if (!empty($propertyFilter)) {
-                    $newPost = [];
-                    foreach ($propertyFilter as $filter) {
-                        $newPost[$filter] = $post->{$filter};
-                    }
-                    $newResults[] = $newPost;
-                } else {
-                    $newResults[] = (array) $post;
-                }
-            }
-            $results = $newResults;
-        }
-
-        return $results;
+    /**
+     * Get posts in category scoped to current shop.
+     *
+     * @param int $categoryId
+     * @param int|null $idLang
+     * @param int $page
+     * @param int $limit
+     * @param bool $count
+     * @param bool $raw
+     * @param array $propertyFilter
+     *
+     * @return array|int
+     * @throws PrestaShopException
+     */
+    public static function getPostsByCategory($categoryId, $idLang = null, $page = 0, $limit = 0, $count = false, $raw = false, $propertyFilter = [])
+    {
+        return static::getShopScopedPosts(
+            $idLang,
+            $page,
+            $limit,
+            $count,
+            $raw,
+            $propertyFilter,
+            'published',
+            'desc',
+            ['sbp.`id_category` = '.(int) $categoryId]
+        );
     }
 
     /**
@@ -366,9 +339,16 @@ class BeesBlogPost extends ObjectModel
      */
     public static function getBlogImage()
     {
+        static::ensureShopAssociations();
+        $shopIds = array_map('intval', Shop::getContextListShopID());
+        if (!$shopIds) {
+            $shopIds = [(int) Context::getContext()->shop->id ?: (int) Configuration::get('PS_SHOP_DEFAULT')];
+        }
         $sql = new DbQuery();
-        $sql->select('`'.self::PRIMARY.'`');
-        $sql->from(self::TABLE);
+        $sql->select('sbp.`'.self::PRIMARY.'`');
+        $sql->from(self::TABLE, 'sbp');
+        $sql->innerJoin(self::SHOP_TABLE, 'sbps', 'sbp.`'.self::PRIMARY.'` = sbps.`'.self::PRIMARY.'`');
+        $sql->where('sbps.`id_shop` IN ('.implode(', ', $shopIds).')');
 
         return Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }
@@ -385,6 +365,7 @@ class BeesBlogPost extends ObjectModel
      */
     public static function getPostRewriteById($idPost, $idLang = null)
     {
+        static::ensureShopAssociations();
         if ($idLang == null) {
             $idLang = (int) Context::getContext()->language->id;
         }
@@ -418,6 +399,7 @@ class BeesBlogPost extends ObjectModel
      */
     public static function getIdByRewrite($rewrite, $active = true, $idLang = null, $idShop = null)
     {
+        static::ensureShopAssociations();
         if (empty($rewrite)) {
             return false;
         }
@@ -451,6 +433,7 @@ class BeesBlogPost extends ObjectModel
      */
     public static function getLangActive($idBeesBlogPost, $idLang)
     {
+        static::ensureShopAssociations();
         $sql = new DbQuery();
         $sql->select('sbpl.`lang_active`');
         $sql->from(static::LANG_TABLE, 'sbpl');
@@ -470,6 +453,7 @@ class BeesBlogPost extends ObjectModel
      */
     public static function setLangActive($idBeesBlogPost, $langActive)
     {
+        static::ensureShopAssociations();
         if (!is_array($langActive)) {
             return;
         }
@@ -573,6 +557,146 @@ class BeesBlogPost extends ObjectModel
                PRIMARY KEY (`id_product`, `id_bees_blog_post`)
              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci'
         );
+    }
+
+    /**
+     * Ensures shop associations are registered before multistore queries run.
+     *
+     * @return void
+     * @throws PrestaShopException
+     */
+    protected static function ensureShopAssociations()
+    {
+        BeesBlog::registerShopAssociations();
+    }
+
+    /**
+     * Fetches posts that are associated with the current shop context.
+     *
+     * @param int|null $idLang
+     * @param int $page
+     * @param int $limit
+     * @param bool $count
+     * @param bool $raw
+     * @param array $propertyFilter
+     * @param string $orderBy
+     * @param string $orderWay
+     * @param string[] $extraWhere
+     *
+     * @return array|int
+     * @throws PrestaShopException
+     */
+    protected static function getShopScopedPosts($idLang, $page, $limit, $count, $raw, array $propertyFilter, $orderBy, $orderWay, array $extraWhere = [])
+    {
+        static::ensureShopAssociations();
+
+        if ($idLang === null) {
+            $idLang = (int) Context::getContext()->language->id;
+        }
+
+        $shopIds = static::getContextShopIds();
+
+        $sql = new DbQuery();
+        if ($count) {
+            $sql->select('COUNT(DISTINCT sbp.`'.static::PRIMARY.'`)');
+        } else {
+            $sql->select('DISTINCT sbp.`'.static::PRIMARY.'`');
+        }
+        $sql->from(static::TABLE, 'sbp');
+        $sql->innerJoin(static::LANG_TABLE, 'sbpl', 'sbp.`'.static::PRIMARY.'` = sbpl.`'.static::PRIMARY.'`');
+        $sql->innerJoin(static::SHOP_TABLE, 'sbps', 'sbp.`'.static::PRIMARY.'` = sbps.`'.static::PRIMARY.'`');
+        $sql->where('sbpl.`id_lang` = '.(int) $idLang);
+        $sql->where('sbps.`id_shop` IN ('.implode(', ', $shopIds).')');
+        $sql->where('sbpl.`lang_active` = 1');
+        $sql->where('sbp.`active` = 1');
+        $sql->where('sbp.`published` <= \''.pSQL(date('Y-m-d H:i:s')).'\'');
+        foreach ($extraWhere as $where) {
+            $sql->where($where);
+        }
+
+        if ($count) {
+            return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
+        }
+
+        $allowedOrderFields = ['published', 'viewed', 'position', static::PRIMARY];
+        if (!in_array($orderBy, $allowedOrderFields, true)) {
+            $orderBy = 'published';
+        }
+        $orderWay = strtolower($orderWay) === 'asc' ? 'asc' : 'desc';
+        $sql->orderBy('sbp.`'.bqSQL($orderBy).'` '.$orderWay);
+
+        if ($limit > 0) {
+            $page = max(1, (int) $page);
+            $sql->limit((int) $limit, ($page - 1) * (int) $limit);
+        }
+
+        $rows = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
+        if (!is_array($rows) || !$rows) {
+            return [];
+        }
+
+        $hydrateShopId = static::getHydrationShopId($shopIds);
+        $results = [];
+        foreach ($rows as $row) {
+            $post = new static((int) $row[static::PRIMARY], (int) $idLang, $hydrateShopId);
+            if ($raw) {
+                if (!empty($propertyFilter)) {
+                    $rawPost = [];
+                    foreach ($propertyFilter as $filter) {
+                        $rawPost[$filter] = $post->{$filter};
+                    }
+                    $results[] = $rawPost;
+                } else {
+                    $results[] = (array) $post;
+                }
+            } else {
+                $results[] = $post;
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Returns the active shop IDs for the current context.
+     *
+     * @return int[]
+     * @throws PrestaShopException
+     */
+    protected static function getContextShopIds()
+    {
+        $shopIds = array_map('intval', Shop::getContextListShopID());
+        if (!$shopIds) {
+            $shopId = (int) Context::getContext()->shop->id;
+            if (!$shopId) {
+                $shopId = (int) Configuration::get('PS_SHOP_DEFAULT');
+            }
+            $shopIds = [$shopId];
+        }
+
+        return $shopIds;
+    }
+
+    /**
+     * Returns a single shop ID to use when hydrating shop-aware ObjectModels.
+     *
+     * @param int[] $shopIds
+     *
+     * @return int
+     * @throws PrestaShopException
+     */
+    protected static function getHydrationShopId(array $shopIds)
+    {
+        $shopId = (int) Context::getContext()->shop->id;
+        if ($shopId) {
+            return $shopId;
+        }
+
+        if ($shopIds) {
+            return (int) reset($shopIds);
+        }
+
+        return (int) Configuration::get('PS_SHOP_DEFAULT');
     }
 
     /**

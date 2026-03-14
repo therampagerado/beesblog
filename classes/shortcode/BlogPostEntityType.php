@@ -126,7 +126,15 @@ class BlogPostEntityType extends EntityTypeBase
         $conn = Db::getInstance();
         $rows = $conn->getArray($sql);
 
-        $shopId = (int)Configuration::get('PS_SHOP_DEFAULT');
+        $shopId = (int)Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue(
+            (new DbQuery())
+                ->select('id_shop')
+                ->from('bees_blog_post_shop')
+                ->where('id_bees_blog_post = '.$entityId)
+        );
+        if (!$shopId) {
+            $shopId = (int) Configuration::get('PS_SHOP_DEFAULT');
+        }
         foreach ($rows as $row) {
             $langId = (int)$row['id_lang'];
             $values = [];
@@ -159,9 +167,10 @@ class BlogPostEntityType extends EntityTypeBase
     {
         $conn = Db::getInstance();
         $blogposts = $conn->getArray((new DbQuery())
-            ->select('DISTINCT bl.id_bees_blog_post, bl.id_lang, bl.link_rewrite')
+            ->select('DISTINCT bl.id_bees_blog_post, bl.id_lang, bs.id_shop, bl.link_rewrite')
             ->from('bees_blog_post_lang', 'bl')
             ->innerJoin('bees_blog_post', 'b', '(b.id_bees_blog_post = bl.id_bees_blog_post)')
+            ->innerJoin('bees_blog_post_shop', 'bs', '(bs.id_bees_blog_post = b.id_bees_blog_post)')
             ->innerJoin('lang', 'l', '(l.id_lang = bl.id_lang AND l.active)')
             ->where('b.active')
             ->where('bl.lang_active')
@@ -169,16 +178,13 @@ class BlogPostEntityType extends EntityTypeBase
         );
 
         $mapping = [];
-        $shops = Shop::getShops(true, null, true);
-
         foreach ($blogposts as $row) {
-            foreach ($shops as $shopId) {
-                $langId = (int)$row['id_lang'];
-                $blogPostId = (int)$row['id_bees_blog_post'];
-                $linkRewrite = (string)$row['link_rewrite'];
-                $url = BeesBlog::getBeesBlogLink('beesblog_post', ['blog_rewrite' => $linkRewrite], (int)$shopId, $langId);
-                $mapping[$url] = $blogPostId;
-            }
+            $langId = (int)$row['id_lang'];
+            $shopId = (int)$row['id_shop'];
+            $blogPostId = (int)$row['id_bees_blog_post'];
+            $linkRewrite = (string)$row['link_rewrite'];
+            $url = BeesBlog::getBeesBlogLink('beesblog_post', ['blog_rewrite' => $linkRewrite], $shopId, $langId);
+            $mapping[$url] = $blogPostId;
         }
 
         return $mapping;
