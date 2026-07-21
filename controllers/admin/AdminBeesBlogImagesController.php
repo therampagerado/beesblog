@@ -20,6 +20,7 @@
 use BeesBlogModule\BeesBlogImage;
 use BeesBlogModule\BeesBlogImageType;
 use BeesBlogModule\BeesBlogMultistore;
+use BeesBlogModule\BeesBlogResponsiveImage;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -178,6 +179,27 @@ class AdminBeesBlogImagesController extends ModuleAdminController
         }
 
         $this->fields_options = [
+            'responsive' => [
+                'title' => $this->l('Responsive images'),
+                'description' => $this->l(
+                    'The module generates proportional candidates in the image format configured by thirty bees, plus one legacy fallback. Images are never enlarged.'
+                ),
+                'fields' => [
+                    BeesBlogResponsiveImage::CONFIG_WIDTHS => [
+                        'title' => $this->l('Candidate widths'),
+                        'type' => 'text',
+                        'required' => true,
+                        'validation' => 'isString',
+                        'cast' => 'strval',
+                        'desc' => $this->l(
+                            'Comma-separated pixels. Defaults: 320, 480, 640, 768, 1024, 1280, 1536, 1920. Saving changes future uploads; use Regenerate images below to rebuild existing files.'
+                        ),
+                    ],
+                ],
+                'submit' => [
+                    'title' => $this->l('Save responsive image settings'),
+                ],
+            ],
             'regenerate' => [
                 'title'  => $this->l('Regenerate images'),
                 'description' => $this->l('Use this functionality to regenerate blog images'),
@@ -282,6 +304,28 @@ class AdminBeesBlogImagesController extends ModuleAdminController
     }
 
     /**
+     * Validate once and store a stable ascending width list in Configuration.
+     *
+     * @return void
+     */
+    public function beforeUpdateOptions()
+    {
+        if (!Tools::isSubmit(BeesBlogResponsiveImage::CONFIG_WIDTHS)) {
+            return;
+        }
+        $error = null;
+        $normalized = BeesBlogResponsiveImage::normalizeWidths(
+            Tools::getValue(BeesBlogResponsiveImage::CONFIG_WIDTHS),
+            $error
+        );
+        if ($normalized === false) {
+            $this->errors[] = Tools::displayError($error);
+            return;
+        }
+        $_POST[BeesBlogResponsiveImage::CONFIG_WIDTHS] = $normalized;
+    }
+
+    /**
      * Associations are derived from the native BO shop context by the model.
      * This avoids AdminController removing other authorized associations based
      * on form checkboxes after a context-wide write.
@@ -371,6 +415,12 @@ class AdminBeesBlogImagesController extends ModuleAdminController
                 $formats,
                 BeesBlogMultistore::getContextShopIds(),
                 $deleteOldImages
+            ) as $error) {
+                $this->errors[] = Tools::displayError($error);
+            }
+            foreach (BeesBlogResponsiveImage::regenerateForShops(
+                $proc['type'],
+                BeesBlogMultistore::getContextShopIds()
             ) as $error) {
                 $this->errors[] = Tools::displayError($error);
             }

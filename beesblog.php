@@ -22,6 +22,7 @@ use BeesBlogModule\BeesBlogImage;
 use BeesBlogModule\BeesBlogImageType;
 use BeesBlogModule\BeesBlogMultistore;
 use BeesBlogModule\BeesBlogPost;
+use BeesBlogModule\BeesBlogResponsiveImage;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -90,7 +91,7 @@ class BeesBlog extends Module
     {
         $this->name = 'beesblog';
         $this->tab = 'front_office_features';
-        $this->version = '1.9.0';
+        $this->version = '1.10.0';
         $this->author = 'thirty bees';
         $this->tb_min_version = '1.0.0';
         $this->tb_versions_compliancy = '> 1.0.0';
@@ -136,6 +137,9 @@ class BeesBlog extends Module
         Configuration::updateValue(static::HOME_TITLE, $this->getTranslatedDefaults('Bees blog title'));
         Configuration::updateValue(static::HOME_KEYWORDS, $this->getTranslatedDefaults('thirty bees blog,thirty bees'));
         Configuration::updateValue(static::HOME_DESCRIPTION, $this->getTranslatedDefaults('The beesiest blog for thirty bees'));
+        if (!BeesBlogResponsiveImage::installConfiguration()) {
+            return false;
+        }
 
         if ($createTables) {
             if (!(BeesBlogPost::createDatabase()
@@ -295,7 +299,8 @@ class BeesBlog extends Module
             !Configuration::deleteByName(static::SHOW_NO_IMAGE) ||
             !Configuration::deleteByName(static::SHOW_AUTHOR) ||
             !Configuration::deleteByName(static::SHOW_DATE) ||
-            !Configuration::deleteByName(static::SOCIAL_SHARING)
+            !Configuration::deleteByName(static::SOCIAL_SHARING) ||
+            !Configuration::deleteByName(BeesBlogResponsiveImage::CONFIG_WIDTHS)
         ) {
             return false;
         }
@@ -314,7 +319,8 @@ class BeesBlog extends Module
         }
 
         if ($removeTables) {
-            if (!(BeesBlogPost::dropDatabase()
+            if (!(BeesBlogResponsiveImage::dropDatabase()
+                && BeesBlogPost::dropDatabase()
                 && BeesBlogCategory::dropDatabase()
                 && BeesBlogImageType::dropDatabase()
                 && BeesBlogImage::dropDatabase())
@@ -1638,11 +1644,10 @@ class BeesBlog extends Module
                 if (is_dir($path)) {
                     $this->deleteAllImages($path . '/');
                 } else {
-                    if (preg_match('/.*\.jpg$/', $file)) {
-                        unlink($path);
-                    }
+                    @unlink($path);
                 }
             }
+            @rmdir(rtrim($dir, '/\\'));
         }
     }
 

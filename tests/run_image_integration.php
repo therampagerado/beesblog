@@ -42,6 +42,7 @@ use BeesBlogModule\BeesBlogImage;
 use BeesBlogModule\BeesBlogImageType;
 use BeesBlogModule\BeesBlogMultistore;
 use BeesBlogModule\BeesBlogPost;
+use BeesBlogModule\BeesBlogResponsiveImage;
 
 $db = Db::getInstance();
 $module = Module::getInstanceByName('beesblog');
@@ -161,6 +162,15 @@ try {
         && file_exists($sourceMigratedImage) && file_exists($targetMigratedImage)
         && $sourceMigratedImage !== $targetMigratedImage,
         'migration creates independent shop-default files for every association'
+    );
+    assertTest(
+        BeesBlogResponsiveImage::getManifest(
+            BeesBlogImage::ENTITY_POST,
+            (int) $sharedPost->id,
+            $sourceShopId,
+            0
+        ) === null,
+        'upgrade migration defers responsive generation until the merchant requests it'
     );
     assertTest(
         pathinfo($sourceMigratedImage, PATHINFO_EXTENSION) === 'jpeg'

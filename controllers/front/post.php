@@ -18,7 +18,9 @@
  */
 
 use BeesBlogModule\BeesBlogLanguageLink;
+use BeesBlogModule\BeesBlogImage;
 use BeesBlogModule\BeesBlogPost;
+use BeesBlogModule\BeesBlogResponsiveImage;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -93,12 +95,25 @@ class BeesBlogPostModuleFrontController extends ModuleFrontController
             'sharing_img' => addcslashes($sharingImageUrl, "'"),
         ]);
 
+        $postImage = BeesBlogResponsiveImage::getImageData(
+            BeesBlogImage::ENTITY_POST,
+            (int) $post->id,
+            'post_default',
+            (int) $this->context->shop->id,
+            (int) $this->context->language->id
+        );
+        if ($postImage) {
+            $postImage['loading'] = 'eager';
+            $postImage['fetchpriority'] = 'high';
+        }
+
         $postProperties = [
             'meta_title'           => $post->meta_title.' - '.Configuration::get('PS_SHOP_NAME'),
             'meta_description'     => $post->meta_description,
             'meta_keywords'        => $post->meta_keywords,
             'blogHome'             => BeesBlog::getBeesBlogLink(),
             'post'                 => $post,
+            'postImage'            => $postImage,
             'authorStyle'          => Configuration::get(BeesBlog::AUTHOR_STYLE),
             'showAuthor'           => (bool) Configuration::get(BeesBlog::SHOW_AUTHOR),
             'showDate'             => (bool) Configuration::get(BeesBlog::SHOW_DATE),

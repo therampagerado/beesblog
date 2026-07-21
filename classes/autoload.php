@@ -31,6 +31,7 @@ spl_autoload_register(
             'BeesBlogModule\\BeesBlogMultistore',
             'BeesBlogModule\\BeesBlogMultistoreObjectModelTrait',
             'BeesBlogModule\\BeesBlogPost',
+            'BeesBlogModule\\BeesBlogResponsiveImage',
         ])) {
             return false;
         }

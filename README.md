@@ -173,6 +173,57 @@ thumbnail formats, shop/language resolution, scoped replacements, duplication,
 fallbacks, and deletion. Both retain schema upgrades but remove their temporary
 blog entities, image files, and shops even if an assertion fails.
 
+## Version 1.10 update: responsive images
+
+Bees Blog 1.10 generates proportional responsive candidates from the one
+image uploaded by the editor. It never crops and never enlarges the source.
+The default candidate widths are `320, 480, 640, 768, 1024, 1280, 1536,
+1920`; widths above an individual source image are skipped.
+
+Candidates use the image extension configured globally by thirty bees. One
+additional JPEG fallback is generated for photographic sources, or PNG for a
+PNG/GIF source, at the largest eligible configured width. Front Office
+templates render a `picture` element containing a width-descriptor `srcset`
+and a single fallback `img` with intrinsic dimensions, lazy/eager loading, and
+fetch-priority hints.
+
+### Configuration and regeneration
+
+Merchants can edit the comma-separated candidate widths under **Blog >
+Images > Responsive images**. Widths are validated, sorted, deduplicated, and
+stored through the native global/shop-group/shop Configuration hierarchy.
+Saving settings affects new uploads. The existing **Regenerate images** action
+rebuilds responsive post and/or category images using the current widths and
+the current thirty bees output format. A versioned generation is activated
+only after every file in it has been written and verified.
+
+### Existing images and migration
+
+The 1.10 upgrade is intentionally non-destructive: it creates the manifest
+table and seeds the default widths, but does not rewrite or delete existing
+image files. Until regeneration, existing images are rendered through their
+1.9 named image type without a `source` element. New uploads generate their
+responsive set immediately. This avoids a long-running upgrade and lets the
+merchant choose when storage and CPU are used.
+
+### Theme overrides
+
+Ready-to-copy Niara and Community Theme overrides are included under
+`themes/niara/`, `themes/community-theme-default/`, and `themes/warehouse/`.
+Copy the selected folder's contents over the matching shop theme and clear the Smarty cache.
+The Community package includes the relative template dependencies required
+when it creates a new Bees Blog override directory.
+
+Additional verification commands are:
+
+```text
+php modules/beesblog/tests/run_upgrade_smoke.php <thirty-bees-root>
+php modules/beesblog/tests/run_responsive_image_integration.php <thirty-bees-root>
+php modules/beesblog/tests/run_responsive_template_smoke.php <thirty-bees-root>
+php modules/beesblog/tests/run_responsive_admin_smoke.php <thirty-bees-root>
+php modules/beesblog/tests/run_theme_override_frontend_smoke.php <thirty-bees-root> <base-url>
+```
+
 ## Roadmap
 
 #### Short Term

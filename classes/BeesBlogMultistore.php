@@ -239,6 +239,12 @@ class BeesBlogMultistore
         if (!BeesBlogImage::createDatabase()) {
             throw new PrestaShopException('Unable to create the blog image association table');
         }
+        if (!BeesBlogResponsiveImage::createDatabase()) {
+            throw new PrestaShopException('Unable to create the responsive blog image manifest table');
+        }
+        if (!BeesBlogResponsiveImage::installConfiguration()) {
+            throw new PrestaShopException('Unable to seed the responsive blog image widths');
+        }
 
         $legacyPostSchema = !static::columnExists(BeesBlogPost::LANG_TABLE, 'id_shop');
         $legacyCategorySchema = !static::columnExists(BeesBlogCategory::LANG_TABLE, 'id_shop');

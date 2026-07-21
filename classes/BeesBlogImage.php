@@ -199,6 +199,7 @@ class BeesBlogImage
      * @param int $idLang
      * @param string|null $error
      * @param string|null $originalExtension Extension from the original upload name
+     * @param bool $generateResponsive False only for non-destructive legacy migration
      * @return bool
      * @throws PrestaShopException
      */
@@ -209,7 +210,8 @@ class BeesBlogImage
         array $shopIds,
         $idLang = 0,
         &$error = null,
-        $originalExtension = null
+        $originalExtension = null,
+        $generateResponsive = true
     )
     {
         static::assertEntityType($entityType);
@@ -315,6 +317,24 @@ class BeesBlogImage
                 return false;
             }
 
+            // Responsive generation is deliberately non-fatal here. The
+            // original and legacy named image types are already valid, so a
+            // server codec problem must not discard an otherwise good upload.
+            // A failed manifest makes storefront rendering use that legacy
+            // image until the merchant regenerates responsive images.
+            if ($generateResponsive) {
+                $responsiveError = null;
+                BeesBlogResponsiveImage::generate(
+                    $directory.$filename,
+                    $entityType,
+                    $idObject,
+                    $idShop,
+                    $idLang,
+                    false,
+                    $responsiveError
+                );
+            }
+
         }
 
         return true;
@@ -351,7 +371,14 @@ class BeesBlogImage
             static::deleteFilesForFilename($entityType, $row['filename']);
         }
 
-        return Db::getInstance()->delete(static::TABLE, $where);
+        $responsiveDeleted = BeesBlogResponsiveImage::deleteForShops(
+            $entityType,
+            $idObject,
+            $shopIds,
+            $idLang
+        );
+
+        return $responsiveDeleted && Db::getInstance()->delete(static::TABLE, $where);
     }
 
     /**
@@ -462,7 +489,9 @@ class BeesBlogImage
                         $idObject,
                         [$idShop],
                         0,
-                        $error
+                        $error,
+                        null,
+                        false
                     )) {
                         throw new PrestaShopException(
                             'Unable to migrate '.$entityType.' image #'.$idObject.' for shop #'.$idShop.
@@ -498,7 +527,8 @@ class BeesBlogImage
                 [(int) $row['id_shop']],
                 (int) $row['id_lang'],
                 $error,
-                pathinfo($row['filename'], PATHINFO_EXTENSION)
+                pathinfo($row['filename'], PATHINFO_EXTENSION),
+                false
             )) {
                 throw new PrestaShopException(
                     'Unable to regenerate migrated '.$row['entity_type'].' image #'.(int) $row['id_object'].
@@ -630,7 +660,7 @@ class BeesBlogImage
     }
 
     /** @return string|false */
-    protected static function resolveStoredPath($entityType, $filename, $imageType, $thumbnailExtension = null)
+    public static function resolveStoredPath($entityType, $filename, $imageType, $thumbnailExtension = null)
     {
         $filename = basename((string) $filename);
         if (!preg_match('/^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$/', $filename)) {
