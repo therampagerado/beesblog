@@ -33,8 +33,8 @@ class AdminBeesBlogImagesController extends ModuleAdminController
         $this->multishop_context = Shop::CONTEXT_ALL | Shop::CONTEXT_GROUP | Shop::CONTEXT_SHOP;
         BeesBlogMultistore::registerAssociations();
 
-        if (!BeesBlogResponsiveImageJob::createDatabase()) {
-            throw new PrestaShopException('Unable to create the responsive blog image queue');
+        if (!BeesBlogResponsiveImageJob::ensureDatabase()) {
+            throw new PrestaShopException('Unable to initialize the responsive blog image queue');
         }
 
         $this->fields_options = [

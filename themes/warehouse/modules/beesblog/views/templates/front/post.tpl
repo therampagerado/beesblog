@@ -21,7 +21,7 @@
     <div id="beesblog-after-post">{$displayBeesBlogAfterPost}</div>
 
     {if isset($socialSharing) && $socialSharing}
-        <div class="post-block beesblog-social-sharing hidden-print">
+        <div class="post-block beesblog-social-sharing socialsharing_beesblog hidden-print">
             <h4 class="page-subheading">{l s='Share this post' mod='beesblog'}</h4>
             <button data-type="twitter" type="button" class="btn btn-xs btn-twitter"><i class="fa-brands fa-twitter" aria-hidden="true"></i> Tweet</button>
             <button data-type="facebook" type="button" class="btn btn-xs btn-facebook"><i class="fa-brands fa-facebook-f" aria-hidden="true"></i> Share</button>

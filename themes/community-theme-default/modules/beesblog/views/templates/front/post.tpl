@@ -1,7 +1,7 @@
 {assign var=postPath value=$post->link}
 {capture name=path}
     <a href="{$blogHome|escape:'htmlall':'UTF-8'}">{l s='Blog' mod='beesblog'}</a>
-    <span class="navigation-pipe">{$navigationPipe|escape:'htmlall':'UTF-8'}</span>{$post->title}
+    <span class="navigation-pipe">{$navigationPipe|escape:'htmlall':'UTF-8'}</span>{$post->title|escape:'htmlall':'UTF-8'}
 {/capture}
 <article>
     <div id="sdsblogArticle" class="clearfix beesblog-post-list-item">

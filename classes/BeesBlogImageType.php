@@ -279,6 +279,7 @@ class BeesBlogImageType extends ObjectModel
     /**
      * Install basic image types
      *
+     * @return bool
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      * @since 1.0.0
@@ -298,7 +299,7 @@ class BeesBlogImageType extends ObjectModel
                     ' WHERE `name` = \''.pSQL($basicType).'\''
                 );
                 if (!$idType) {
-                    Db::getInstance()->insert(
+                    if (!Db::getInstance()->insert(
                         static::TABLE,
                         [
                             'name' => pSQL($basicType),
@@ -307,10 +308,15 @@ class BeesBlogImageType extends ObjectModel
                             'posts' => (int) (substr($basicType, 0, 4) === 'post'),
                             'categories' => (int) (substr($basicType, 0, 4) !== 'post'),
                         ]
-                    );
+                    )) {
+                        return false;
+                    }
                     $idType = (int) Db::getInstance()->Insert_ID();
+                    if (!$idType) {
+                        return false;
+                    }
                 }
-                Db::getInstance()->insert(
+                if (!Db::getInstance()->insert(
                     static::SHOP_TABLE,
                     [
                         static::PRIMARY => $idType,
@@ -319,8 +325,12 @@ class BeesBlogImageType extends ObjectModel
                     false,
                     true,
                     Db::INSERT_IGNORE
-                );
+                )) {
+                    return false;
+                }
             }
         }
+
+        return true;
     }
 }

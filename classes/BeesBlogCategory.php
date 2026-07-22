@@ -64,7 +64,7 @@ class BeesBlogCategory extends ObjectModel
             'date_add'          => ['type' => self::TYPE_DATE,                   'validate' => 'isString',      'required' => true,  'default' => '1970-01-01 00:00:00', 'db_type' => 'DATETIME'],
             'date_upd'          => ['type' => self::TYPE_DATE, 'shop' => true,   'validate' => 'isString',      'required' => true,  'default' => '1970-01-01 00:00:00', 'db_type' => 'DATETIME'],
             'title'             => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isString',      'required' => true,                                      'db_type' => 'VARCHAR(255)'],
-            'description'       => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isString',      'required' => false,                                     'db_type' => 'VARCHAR(512)'],
+            'description'       => ['type' => self::TYPE_HTML,   'lang' => true, 'validate' => 'isCleanHtml',   'required' => false,                                     'db_type' => 'VARCHAR(512)'],
             'link_rewrite'      => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isLinkRewrite', 'required' => true,                                      'db_type' => 'VARCHAR(256)', 'ws_modifier' => ['http_method' => WebserviceRequest::HTTP_POST, 'modifier' => 'modifierWsLinkRewrite']],
             'meta_title'        => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isGenericName', 'required' => false,                                     'db_type' => 'VARCHAR(128)'],
             'meta_description'  => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isGenericName', 'required' => false,                                     'db_type' => 'VARCHAR(255)'],

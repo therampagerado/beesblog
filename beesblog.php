@@ -125,20 +125,21 @@ class BeesBlog extends Module
             return false;
         }
 
-        Configuration::updateGlobalValue(static::POSTS_PER_PAGE, 5);
-        Configuration::updateGlobalValue(static::SHOW_AUTHOR, true);
-        Configuration::updateGlobalValue(static::SHOW_DATE, true);
-        Configuration::updateGlobalValue(static::SOCIAL_SHARING, true);
-        Configuration::updateGlobalValue(static::AUTHOR_STYLE, 1);
-        Configuration::updateGlobalValue(static::MAIN_URL_KEY, $this->getTranslatedDefaults('blog'));
-        Configuration::updateGlobalValue(static::USE_HTML, true);
-        Configuration::updateGlobalValue(static::SHOW_POST_COUNT, true);
-        Configuration::updateGlobalValue(static::SHOW_NO_IMAGE, false);
-        Configuration::updateGlobalValue(static::SHOW_CATEGORY_IMAGE, false);
-        Configuration::updateValue(static::HOME_TITLE, $this->getTranslatedDefaults('Bees blog title'));
-        Configuration::updateValue(static::HOME_KEYWORDS, $this->getTranslatedDefaults('thirty bees blog,thirty bees'));
-        Configuration::updateValue(static::HOME_DESCRIPTION, $this->getTranslatedDefaults('The beesiest blog for thirty bees'));
-        if (!BeesBlogResponsiveImage::installConfiguration()) {
+        if (!(Configuration::updateGlobalValue(static::POSTS_PER_PAGE, 5)
+            && Configuration::updateGlobalValue(static::SHOW_AUTHOR, true)
+            && Configuration::updateGlobalValue(static::SHOW_DATE, true)
+            && Configuration::updateGlobalValue(static::SOCIAL_SHARING, true)
+            && Configuration::updateGlobalValue(static::AUTHOR_STYLE, 1)
+            && Configuration::updateGlobalValue(static::MAIN_URL_KEY, $this->getTranslatedDefaults('blog'))
+            && Configuration::updateGlobalValue(static::USE_HTML, true)
+            && Configuration::updateGlobalValue(static::SHOW_POST_COUNT, true)
+            && Configuration::updateGlobalValue(static::SHOW_NO_IMAGE, false)
+            && Configuration::updateGlobalValue(static::SHOW_CATEGORY_IMAGE, false)
+            && Configuration::updateValue(static::HOME_TITLE, $this->getTranslatedDefaults('Bees blog title'))
+            && Configuration::updateValue(static::HOME_KEYWORDS, $this->getTranslatedDefaults('thirty bees blog,thirty bees'))
+            && Configuration::updateValue(static::HOME_DESCRIPTION, $this->getTranslatedDefaults('The beesiest blog for thirty bees'))
+            && BeesBlogResponsiveImage::installConfiguration())
+        ) {
             return false;
         }
 
@@ -154,11 +155,12 @@ class BeesBlog extends Module
             return false;
         }
 
-        $this->createBeesBlogTabs();
-        BeesBlogImageType::installBasics();
+        if (!$this->createBeesBlogTabs() || !BeesBlogImageType::installBasics()) {
+            return false;
+        }
 
-        if ($createTables) {
-            $this->installFixtures();
+        if ($createTables && !$this->installFixtures()) {
+            return false;
         }
 
         return true;
@@ -204,7 +206,9 @@ class BeesBlog extends Module
                 $addHook->description = pSQL($hook['description']);
                 $addHook->position = pSQL($hook['position']);
                 $addHook->live_edit = $hook['live_edit'];
-                $addHook->add();
+                if (!$addHook->add()) {
+                    return false;
+                }
                 $hookId = $addHook->id;
                 if (!$hookId) {
                     return false;
@@ -235,7 +239,9 @@ class BeesBlog extends Module
             $beesTab->name[$l['id_lang']] = $this->l('Blog');
         }
 
-        $beesTab->save();
+        if (!$beesTab->save() || !$beesTab->id) {
+            return false;
+        }
 
         $tabs = [
             [
@@ -267,7 +273,9 @@ class BeesBlog extends Module
                 $newTab->name[$l['id_lang']] = $this->l($tab['name']);
             }
 
-            $newTab->save();
+            if (!$newTab->save()) {
+                return false;
+            }
         }
 
         return true;
@@ -299,21 +307,26 @@ class BeesBlog extends Module
             !Configuration::deleteByName(static::SHOW_AUTHOR) ||
             !Configuration::deleteByName(static::SHOW_DATE) ||
             !Configuration::deleteByName(static::SOCIAL_SHARING) ||
+            !Configuration::deleteByName(static::DISQUS_USERNAME) ||
+            !Configuration::deleteByName(static::ENABLE_COMMENT) ||
+            !Configuration::deleteByName(static::CUSTOM_CSS) ||
             !Configuration::deleteByName(BeesBlogResponsiveImage::CONFIG_WIDTHS)
         ) {
             return false;
         }
 
         $idtabs = [
+            Tab::getIdFromClassName('AdminBeesBlogPost'),
+            Tab::getIdFromClassName('AdminBeesBlogCategory'),
+            Tab::getIdFromClassName('AdminBeesBlogImages'),
             Tab::getIdFromClassName('AdminBeesBlog'),
-            Tab::getIdFromClassName('AdminBlogPost'),
-            Tab::getIdFromClassName('AdminBlogCategory'),
-            Tab::getIdFromClassName('AdminImageType'),
         ];
         foreach ($idtabs as $tabid) {
             if ($tabid) {
                 $tab = new Tab($tabid);
-                $tab->delete();
+                if (!$tab->delete()) {
+                    return false;
+                }
             }
         }
 
@@ -329,7 +342,9 @@ class BeesBlog extends Module
             }
         }
 
-        $this->deleteBlogHooks();
+        if (!$this->deleteBlogHooks()) {
+            return false;
+        }
 
         if ($removeTables) {
             // delete images when module is fully uninstalled
@@ -342,7 +357,7 @@ class BeesBlog extends Module
     /**
      * Delete blog hooks
      *
-     * @return void
+     * @return bool
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
@@ -354,9 +369,13 @@ class BeesBlog extends Module
             $hookid = Hook::getIdByName($hkv['name']);
             if ($hookid) {
                 $dltHook = new Hook($hookid);
-                $dltHook->delete();
+                if (!$dltHook->delete()) {
+                    return false;
+                }
             }
         }
+
+        return true;
     }
 
     /**
@@ -1498,6 +1517,7 @@ class BeesBlog extends Module
     /**
      * Installs data fixtures
      *
+     * @return bool
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
@@ -1519,26 +1539,36 @@ class BeesBlog extends Module
             'meta_description' => 'news about thirty bees',
             'meta_keywords' => '',
         ]);
-        $category->add();
+        if (!$category->add()) {
+            return false;
+        }
 
-        $this->installPostFixture('post1', $category->id, [
+        if (!$this->installPostFixture('post1', $category->id, [
             'title' => 'Organic Roasted Coffee',
             'link_rewrite' => 'organic-coffee',
             'meta_title' => 'Organic Roasted Coffee',
             'meta_description' => 'thirty bees organic roasted coffee',
-        ]);
-        $this->installPostFixture('post2', $category->id, [
+        ])) {
+            return false;
+        }
+        if (!$this->installPostFixture('post2', $category->id, [
             'title' => 'Hand Picked Teas',
             'link_rewrite' => 'hand-picked-teas',
             'meta_title' => 'Hand Picked Teas',
             'meta_description' => 'Hand picked teas from thirty bees',
-        ]);
-        $this->installPostFixture('post3', $category->id, [
+        ])) {
+            return false;
+        }
+        if (!$this->installPostFixture('post3', $category->id, [
             'title' => 'Organic Gifts',
             'link_rewrite' => 'organic-gifts',
             'meta_title' => 'Organic Gifts',
             'meta_description' => 'Organic gifts from thirty bees',
-        ]);
+        ])) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -1547,6 +1577,7 @@ class BeesBlog extends Module
      * @param string $id
      * @param int $categoryId
      * @param array $texts
+     * @return bool
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
@@ -1564,8 +1595,12 @@ class BeesBlog extends Module
             'meta_keywords' => '',
             'lang_active' => true,
         ]));
-        $post->add();
+        if (!$post->add()) {
+            return false;
+        }
         $this->installFixtureImage($id . '.jpg', $post->id);
+
+        return true;
     }
 
     /**
@@ -1625,7 +1660,12 @@ class BeesBlog extends Module
      */
     protected function getPostFixtureContent($file)
     {
-        return file_get_contents(_PS_MODULE_DIR_ . $this->name . '/fixtures/' . $file);
+        $content = file_get_contents(_PS_MODULE_DIR_ . $this->name . '/fixtures/' . $file);
+        if ($content === false) {
+            throw new PrestaShopException(sprintf($this->l('File with fixture content not found: `%s`'), $file));
+        }
+
+        return $content;
     }
 
     /**

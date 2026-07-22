@@ -7,6 +7,7 @@
 
 namespace BeesBlogModule;
 
+use Configuration;
 use Db;
 use PrestaShopException;
 
@@ -24,11 +25,16 @@ class BeesBlogResponsiveImageJob
     const STATUS_IN_PROGRESS = 'in_progress';
     const STATUS_COMPLETED = 'completed';
     const STATUS_FAILED = 'failed';
+    const CONFIG_SCHEMA_VERSION = 'BEESBLOG_RESPONSIVE_JOB_SCHEMA_VERSION';
+    const SCHEMA_VERSION = '1';
+
+    /** @var bool */
+    protected static $databaseReady = false;
 
     /** @return bool */
     public static function createDatabase()
     {
-        return Db::getInstance()->execute(
+        if (!Db::getInstance()->execute(
             'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.static::TABLE.'` ('.
             ' `entity_type` VARCHAR(16) NOT NULL,'.
             ' `id_object` INT(11) UNSIGNED NOT NULL,'.
@@ -42,13 +48,44 @@ class BeesBlogResponsiveImageJob
             ' PRIMARY KEY (`entity_type`, `id_object`, `id_shop`, `id_lang`),'.
             ' KEY `bees_blog_responsive_job_status` (`id_shop`, `entity_type`, `status`)'.
             ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-        );
+        ) || !Configuration::updateGlobalValue(static::CONFIG_SCHEMA_VERSION, static::SCHEMA_VERSION)) {
+            return false;
+        }
+
+        static::$databaseReady = true;
+
+        return true;
+    }
+
+    /**
+     * Perform the same-version FTP deployment repair once, then keep all
+     * normal request paths free from repeated CREATE TABLE statements.
+     *
+     * @return bool
+     */
+    public static function ensureDatabase()
+    {
+        if (static::$databaseReady) {
+            return true;
+        }
+        if ((string) Configuration::getGlobalValue(static::CONFIG_SCHEMA_VERSION) === static::SCHEMA_VERSION) {
+            static::$databaseReady = true;
+
+            return true;
+        }
+
+        return static::createDatabase();
     }
 
     /** @return bool */
     public static function dropDatabase()
     {
-        return Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.static::TABLE.'`');
+        if (!Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.static::TABLE.'`')) {
+            return false;
+        }
+        static::$databaseReady = false;
+
+        return Configuration::deleteByName(static::CONFIG_SCHEMA_VERSION);
     }
 
     /**
@@ -65,7 +102,7 @@ class BeesBlogResponsiveImageJob
     {
         static::assertEntityType($entityType);
         $shopIds = static::normalizeShopIds($shopIds);
-        if (!$shopIds || !static::createDatabase()) {
+        if (!$shopIds || !static::ensureDatabase()) {
             return false;
         }
 
@@ -293,7 +330,7 @@ class BeesBlogResponsiveImageJob
     {
         static::assertEntityType($entityType);
         $shopIds = static::normalizeShopIds($shopIds);
-        if (!$shopIds || !static::createDatabase()) {
+        if (!$shopIds || !static::ensureDatabase()) {
             return ['processed' => false, 'error' => 'Unable to initialize the responsive image queue.'];
         }
 
@@ -425,7 +462,7 @@ class BeesBlogResponsiveImageJob
     public static function markCompleted($entityType, $idObject, $idShop, $idLang, $configurationHash)
     {
         static::assertEntityType($entityType);
-        if (!static::createDatabase()) {
+        if (!static::ensureDatabase()) {
             return false;
         }
 
@@ -449,9 +486,7 @@ class BeesBlogResponsiveImageJob
         if (!$shopIds) {
             return true;
         }
-        // Also covers same-version code deployments where the upgrade runner
-        // has already recorded 1.10.0 and therefore will not run again.
-        if (!static::createDatabase()) {
+        if (!static::ensureDatabase()) {
             return false;
         }
         $where = '`entity_type` = \''.pSQL($entityType).'\' AND `id_object` = '.(int) $idObject.

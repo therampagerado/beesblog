@@ -323,7 +323,7 @@ class BeesBlogMultistore
         ];
         static::ensureColumns(BeesBlogPost::SHOP_TABLE, $fields);
         if ($copyLegacyValues && static::columnExists(BeesBlogPost::TABLE, 'active')) {
-            Db::getInstance()->execute(
+            if (!Db::getInstance()->execute(
                 'UPDATE `'._DB_PREFIX_.BeesBlogPost::SHOP_TABLE.'` s'.
                 ' INNER JOIN `'._DB_PREFIX_.BeesBlogPost::TABLE.'` b ON b.`'.BeesBlogPost::PRIMARY.'` = s.`'.BeesBlogPost::PRIMARY.'`'.
                 ' SET s.`active` = b.`active`, s.`comments_enabled` = b.`comments_enabled`,'.
@@ -331,7 +331,9 @@ class BeesBlogMultistore
                 ' s.`id_category` = b.`id_category`, s.`id_employee` = b.`id_employee`,'.
                 ' s.`image` = b.`image`, s.`position` = b.`position`,'.
                 ' s.`post_type` = b.`post_type`, s.`viewed` = b.`viewed`'
-            );
+            )) {
+                throw new PrestaShopException('Unable to migrate blog post shop values');
+            }
         }
     }
 
@@ -346,12 +348,14 @@ class BeesBlogMultistore
         ];
         static::ensureColumns(BeesBlogCategory::SHOP_TABLE, $fields);
         if ($copyLegacyValues && static::columnExists(BeesBlogCategory::TABLE, 'active')) {
-            Db::getInstance()->execute(
+            if (!Db::getInstance()->execute(
                 'UPDATE `'._DB_PREFIX_.BeesBlogCategory::SHOP_TABLE.'` s'.
                 ' INNER JOIN `'._DB_PREFIX_.BeesBlogCategory::TABLE.'` b ON b.`'.BeesBlogCategory::PRIMARY.'` = s.`'.BeesBlogCategory::PRIMARY.'`'.
                 ' SET s.`id_parent` = b.`id_parent`, s.`position` = b.`position`,'.
                 ' s.`active` = b.`active`, s.`date_upd` = b.`date_upd`'
-            );
+            )) {
+                throw new PrestaShopException('Unable to migrate blog category shop values');
+            }
         }
     }
 
@@ -381,13 +385,15 @@ class BeesBlogMultistore
     protected static function ensureOrphanAssociations($table, $primary)
     {
         $idShop = (int) \Configuration::get('PS_SHOP_DEFAULT');
-        Db::getInstance()->execute(
+        if (!Db::getInstance()->execute(
             'INSERT IGNORE INTO `'._DB_PREFIX_.bqSQL($table).'_shop` (`'.bqSQL($primary).'`, `id_shop`)'.
             ' SELECT b.`'.bqSQL($primary).'`, '.$idShop.
             ' FROM `'._DB_PREFIX_.bqSQL($table).'` b'.
             ' LEFT JOIN `'._DB_PREFIX_.bqSQL($table).'_shop` s ON s.`'.bqSQL($primary).'` = b.`'.bqSQL($primary).'`'.
             ' WHERE s.`'.bqSQL($primary).'` IS NULL'
-        );
+        )) {
+            throw new PrestaShopException('Unable to repair '.$table.' shop associations');
+        }
     }
 
     /**
@@ -401,15 +407,21 @@ class BeesBlogMultistore
         $langTable = $table.'_lang';
         if (!static::columnExists($langTable, 'id_shop')) {
             $temporary = $langTable.'_multistore';
-            Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.bqSQL($temporary).'`');
-            Db::getInstance()->execute(
+            if (!Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.bqSQL($temporary).'`')) {
+                throw new PrestaShopException('Unable to remove stale '.$temporary.' table');
+            }
+            if (!Db::getInstance()->execute(
                 'CREATE TABLE `'._DB_PREFIX_.bqSQL($temporary).'` LIKE `'._DB_PREFIX_.bqSQL($langTable).'`'
-            );
-            Db::getInstance()->execute(
+            )) {
+                throw new PrestaShopException('Unable to create temporary '.$langTable.' migration table');
+            }
+            if (!Db::getInstance()->execute(
                 'ALTER TABLE `'._DB_PREFIX_.bqSQL($temporary).'` DROP PRIMARY KEY,'.
                 ' ADD `id_shop` INT(11) NOT NULL,'.
                 ' ADD PRIMARY KEY (`'.bqSQL($primary).'`, `id_shop`, `id_lang`)'
-            );
+            )) {
+                throw new PrestaShopException('Unable to prepare '.$langTable.' multistore schema');
+            }
 
             $columns = static::getColumns($langTable);
             $quotedColumns = array_map(function ($column) {
@@ -429,14 +441,18 @@ class BeesBlogMultistore
             }
 
             $legacy = $langTable.'_legacy_180';
-            Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.bqSQL($legacy).'`');
+            if (!Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.bqSQL($legacy).'`')) {
+                throw new PrestaShopException('Unable to remove stale '.$legacy.' table');
+            }
             if (!Db::getInstance()->execute(
                 'RENAME TABLE `'._DB_PREFIX_.bqSQL($langTable).'` TO `'._DB_PREFIX_.bqSQL($legacy).'`,'.
                 ' `'._DB_PREFIX_.bqSQL($temporary).'` TO `'._DB_PREFIX_.bqSQL($langTable).'`'
             )) {
                 throw new PrestaShopException('Unable to activate '.$langTable.' multistore schema');
             }
-            Db::getInstance()->execute('DROP TABLE `'._DB_PREFIX_.bqSQL($legacy).'`');
+            if (!Db::getInstance()->execute('DROP TABLE `'._DB_PREFIX_.bqSQL($legacy).'`')) {
+                throw new PrestaShopException('Unable to remove migrated '.$legacy.' table');
+            }
         } else {
             static::ensurePrimaryKey($langTable, [$primary, 'id_shop', 'id_lang']);
         }
@@ -450,7 +466,9 @@ class BeesBlogMultistore
     {
         $table = 'bees_blog_post_product';
         if (!static::tableExists($table)) {
-            BeesBlogPost::createRelatedProductsTable();
+            if (!BeesBlogPost::createRelatedProductsTable()) {
+                throw new PrestaShopException('Unable to create the related blog products table');
+            }
             return;
         }
         if (static::columnExists($table, 'id_shop')) {
@@ -459,8 +477,10 @@ class BeesBlogMultistore
         }
 
         $temporary = $table.'_multistore';
-        Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.bqSQL($temporary).'`');
-        Db::getInstance()->execute(
+        if (!Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.bqSQL($temporary).'`')) {
+            throw new PrestaShopException('Unable to remove stale '.$temporary.' table');
+        }
+        if (!Db::getInstance()->execute(
             'CREATE TABLE `'._DB_PREFIX_.bqSQL($temporary).'` ('.
             ' `id_product` INT(11) UNSIGNED NOT NULL,'.
             ' `'.BeesBlogPost::PRIMARY.'` INT(11) UNSIGNED NOT NULL,'.
@@ -468,21 +488,31 @@ class BeesBlogMultistore
             ' PRIMARY KEY (`id_product`, `'.BeesBlogPost::PRIMARY.'`, `id_shop`),'.
             ' KEY `beesblog_post_shop` (`'.BeesBlogPost::PRIMARY.'`, `id_shop`)'.
             ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-        );
-        Db::getInstance()->execute(
+        )) {
+            throw new PrestaShopException('Unable to create the related blog products migration table');
+        }
+        if (!Db::getInstance()->execute(
             'INSERT IGNORE INTO `'._DB_PREFIX_.bqSQL($temporary).'` (`id_product`, `'.BeesBlogPost::PRIMARY.'`, `id_shop`)'.
             ' SELECT r.`id_product`, r.`'.BeesBlogPost::PRIMARY.'`, s.`id_shop`'.
             ' FROM `'._DB_PREFIX_.bqSQL($table).'` r'.
             ' INNER JOIN `'._DB_PREFIX_.BeesBlogPost::SHOP_TABLE.'` s'.
             ' ON s.`'.BeesBlogPost::PRIMARY.'` = r.`'.BeesBlogPost::PRIMARY.'`'
-        );
+        )) {
+            throw new PrestaShopException('Unable to migrate related blog products');
+        }
         $legacy = $table.'_legacy_180';
-        Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.bqSQL($legacy).'`');
-        Db::getInstance()->execute(
+        if (!Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.bqSQL($legacy).'`')) {
+            throw new PrestaShopException('Unable to remove stale '.$legacy.' table');
+        }
+        if (!Db::getInstance()->execute(
             'RENAME TABLE `'._DB_PREFIX_.bqSQL($table).'` TO `'._DB_PREFIX_.bqSQL($legacy).'`,'.
             ' `'._DB_PREFIX_.bqSQL($temporary).'` TO `'._DB_PREFIX_.bqSQL($table).'`'
-        );
-        Db::getInstance()->execute('DROP TABLE `'._DB_PREFIX_.bqSQL($legacy).'`');
+        )) {
+            throw new PrestaShopException('Unable to activate the related blog products multistore schema');
+        }
+        if (!Db::getInstance()->execute('DROP TABLE `'._DB_PREFIX_.bqSQL($legacy).'`')) {
+            throw new PrestaShopException('Unable to remove migrated '.$legacy.' table');
+        }
     }
 
     /**
@@ -498,7 +528,10 @@ class BeesBlogMultistore
             ' FROM `'._DB_PREFIX_.bqSQL($table).'`'.
             ' GROUP BY `id_shop`, `id_lang`, `link_rewrite` HAVING duplicate_count > 1'
         );
-        foreach ((array) $groups as $group) {
+        if ($groups === false) {
+            throw new PrestaShopException('Unable to inspect '.$table.' slug conflicts');
+        }
+        foreach ($groups as $group) {
             $rows = Db::getInstance()->executeS(
                 'SELECT `'.bqSQL($primary).'` FROM `'._DB_PREFIX_.bqSQL($table).'`'.
                 ' WHERE `id_shop` = '.(int) $group['id_shop'].
@@ -506,6 +539,9 @@ class BeesBlogMultistore
                 ' AND `link_rewrite` = \''.pSQL($group['link_rewrite']).'\''.
                 ' ORDER BY `'.bqSQL($primary).'` ASC'
             );
+            if ($rows === false) {
+                throw new PrestaShopException('Unable to read '.$table.' slug conflicts');
+            }
             array_shift($rows);
             foreach ($rows as $row) {
                 $idObject = (int) $row[$primary];
@@ -522,13 +558,15 @@ class BeesBlogMultistore
                     $extra = '-'.$counter++;
                     $candidate = mb_substr($base, 0, max(1, $slugSize - mb_strlen($suffix.$extra))).$suffix.$extra;
                 }
-                Db::getInstance()->update(
+                if (!Db::getInstance()->update(
                     $table,
                     ['link_rewrite' => pSQL($candidate)],
                     '`'.bqSQL($primary).'` = '.$idObject.
                     ' AND `id_shop` = '.(int) $group['id_shop'].
                     ' AND `id_lang` = '.(int) $group['id_lang']
-                );
+                )) {
+                    throw new PrestaShopException('Unable to resolve '.$table.' slug conflicts');
+                }
             }
         }
     }
@@ -541,9 +579,13 @@ class BeesBlogMultistore
     protected static function ensurePrimaryKey($table, array $columns)
     {
         $current = [];
-        foreach ((array) Db::getInstance()->executeS(
+        $indexes = Db::getInstance()->executeS(
             'SHOW INDEX FROM `'._DB_PREFIX_.bqSQL($table).'` WHERE `Key_name` = \'PRIMARY\''
-        ) as $row) {
+        );
+        if ($indexes === false) {
+            throw new PrestaShopException('Unable to inspect '.$table.' primary key');
+        }
+        foreach ($indexes as $row) {
             $current[(int) $row['Seq_in_index']] = $row['Column_name'];
         }
         ksort($current);
@@ -553,10 +595,12 @@ class BeesBlogMultistore
         $parts = array_map(function ($column) {
             return '`'.bqSQL($column).'`';
         }, $columns);
-        Db::getInstance()->execute(
+        if (!Db::getInstance()->execute(
             'ALTER TABLE `'._DB_PREFIX_.bqSQL($table).'`'.
             ($current ? ' DROP PRIMARY KEY,' : '').' ADD PRIMARY KEY ('.implode(', ', $parts).')'
-        );
+        )) {
+            throw new PrestaShopException('Unable to update '.$table.' primary key');
+        }
     }
 
     /**
@@ -579,10 +623,12 @@ class BeesBlogMultistore
         $parts = array_map(function ($column) {
             return '`'.bqSQL($column).'`';
         }, $columns);
-        Db::getInstance()->execute(
+        if (!Db::getInstance()->execute(
             'ALTER TABLE `'._DB_PREFIX_.bqSQL($table).'` ADD '.($unique ? 'UNIQUE ' : '').
             'KEY `'.bqSQL($name).'` ('.implode(', ', $parts).')'
-        );
+        )) {
+            throw new PrestaShopException('Unable to add '.$table.'.'.$name.' index');
+        }
     }
 
     /** @return bool */
@@ -607,9 +653,11 @@ class BeesBlogMultistore
     /** @return string[] */
     protected static function getColumns($table)
     {
-        return array_column(
-            Db::getInstance()->executeS('SHOW COLUMNS FROM `'._DB_PREFIX_.bqSQL($table).'`'),
-            'Field'
-        );
+        $columns = Db::getInstance()->executeS('SHOW COLUMNS FROM `'._DB_PREFIX_.bqSQL($table).'`');
+        if ($columns === false) {
+            throw new PrestaShopException('Unable to inspect '.$table.' columns');
+        }
+
+        return array_column($columns, 'Field');
     }
 }
