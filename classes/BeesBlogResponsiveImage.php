@@ -129,6 +129,50 @@ class BeesBlogResponsiveImage
         return array_map('intval', explode(',', $normalized));
     }
 
+    /** @return string */
+    public static function getConfigurationHash($idShop = null)
+    {
+        $idShop = $idShop === null ? (int) Context::getContext()->shop->id : (int) $idShop;
+
+        return sha1(
+            implode(',', static::getConfiguredWidths($idShop)).'|'.
+            strtolower((string) ImageManager::getDefaultImageExtension())
+        );
+    }
+
+    /**
+     * Validate a manifest row against the current settings and its files.
+     * Queue queries alias manifest fields to avoid collisions with job fields.
+     *
+     * @param string $entityType
+     * @param array $row
+     * @param string|null $configurationHash
+     * @return bool
+     */
+    public static function isManifestDataCurrent($entityType, array $row, $configurationHash = null)
+    {
+        $manifest = $row;
+        if (array_key_exists('manifest_status', $row)) {
+            $manifest['status'] = $row['manifest_status'];
+        }
+        if (array_key_exists('manifest_hash', $row)) {
+            $manifest['configuration_hash'] = $row['manifest_hash'];
+        }
+        $configurationHash = $configurationHash === null
+            ? static::getConfigurationHash((int) $row['id_shop'])
+            : (string) $configurationHash;
+
+        return !empty($manifest['configuration_hash'])
+            && hash_equals($configurationHash, (string) $manifest['configuration_hash'])
+            && (bool) static::buildResponsiveData(
+                $entityType,
+                (int) $row['id_object'],
+                (int) $row['id_shop'],
+                (int) $row['id_lang'],
+                $manifest
+            );
+    }
+
     /**
      * Generate a complete responsive set for one exact image scope.
      *
@@ -243,7 +287,7 @@ class BeesBlogResponsiveImage
             'widths' => $widthString,
             'fallback_width' => $fallbackWidth,
             'fallback_height' => $fallbackHeight,
-            'configuration_hash' => sha1(implode(',', $configuredWidths).'|'.$modernExtension),
+            'configuration_hash' => static::getConfigurationHash($idShop),
             'status' => 'ready',
             'error_message' => '',
         ]);
@@ -253,6 +297,14 @@ class BeesBlogResponsiveImage
             static::recordFailure($entityType, $idObject, $idShop, $idLang, $error, $preserveCurrent);
             return false;
         }
+
+        BeesBlogResponsiveImageJob::markCompleted(
+            $entityType,
+            $idObject,
+            $idShop,
+            $idLang,
+            static::getConfigurationHash($idShop)
+        );
 
         if ($oldManifest && $oldManifest['generation'] !== $generation) {
             static::deleteGeneration($entityType, $idObject, $idShop, $idLang, $oldManifest['generation']);

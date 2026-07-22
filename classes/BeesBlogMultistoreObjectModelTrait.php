@@ -39,6 +39,28 @@ if (!defined('_TB_VERSION_')) {
 trait BeesBlogMultistoreObjectModelTrait
 {
     /**
+     * Core creates fields marked `shop` only in the _shop table, but its
+     * compatibility getFieldsPrimary() filter excludes only `shopOnly`
+     * fields. Explicitly filter the module's shop fields so inserts and
+     * updates work against both clean schemas and upgraded schemas that still
+     * contain obsolete copies in the base table.
+     *
+     * @return array
+     * @throws PrestaShopException
+     */
+    protected function getFieldsPrimary()
+    {
+        $fields = parent::getFieldsPrimary();
+        foreach ($this->def['fields'] as $field => $definition) {
+            if (!empty($definition['shop'])) {
+                unset($fields[$field]);
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
      * @param bool $autoDate
      * @param bool $nullValues
      *

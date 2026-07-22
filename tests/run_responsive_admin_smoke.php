@@ -19,6 +19,7 @@ require_once $root.'/modules/beesblog/beesblog.php';
 require_once $root.'/modules/beesblog/controllers/admin/AdminBeesBlogImagesController.php';
 
 use BeesBlogModule\BeesBlogResponsiveImage;
+use BeesBlogModule\BeesBlogResponsiveImageJob;
 
 function assertResponsiveAdmin($condition, $message)
 {
@@ -39,8 +40,24 @@ try {
         'Images page exposes merchant-configurable responsive widths'
     );
     assertResponsiveAdmin(
-        isset($controller->fields_options['regenerate']['submit']),
-        'Images page keeps a regeneration action for applying changed widths'
+        (bool) Db::getInstance()->getValue(
+            'SELECT 1 FROM `information_schema`.`tables` WHERE `table_schema` = DATABASE()'.
+            ' AND `table_name` = \''.pSQL(_DB_PREFIX_.BeesBlogResponsiveImageJob::TABLE).'\''
+        ),
+        'Images page initializes the persistent responsive generation queue'
+    );
+    $dashboard = $controller->renderList();
+    assertResponsiveAdmin(
+        strpos($dashboard, 'data-responsive-row="posts"') !== false
+        && strpos($dashboard, 'data-responsive-row="categories"') !== false,
+        'Images page renders separate Posts and Categories progress rows'
+    );
+    assertResponsiveAdmin(
+        strpos($dashboard, 'data-mode="missing"') !== false
+        && strpos($dashboard, 'class="btn btn-info beesblog-responsive-action"') !== false
+        && strpos($dashboard, 'id="beesblog-responsive-reset"') !== false
+        && strpos($dashboard, 'ResetResponsiveImageStatus') !== false,
+        'Images page renders core-style row actions and the generation-status reset action'
     );
 
     $_POST = [BeesBlogResponsiveImage::CONFIG_WIDTHS => '768, 320, 480, 768'];

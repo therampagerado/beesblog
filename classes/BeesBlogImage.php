@@ -377,8 +377,14 @@ class BeesBlogImage
             $shopIds,
             $idLang
         );
+        $responsiveJobsDeleted = BeesBlogResponsiveImageJob::deleteForShops(
+            $entityType,
+            $idObject,
+            $shopIds,
+            $idLang
+        );
 
-        return $responsiveDeleted && Db::getInstance()->delete(static::TABLE, $where);
+        return $responsiveDeleted && $responsiveJobsDeleted && Db::getInstance()->delete(static::TABLE, $where);
     }
 
     /**
@@ -541,11 +547,24 @@ class BeesBlogImage
             return false;
         }
 
-        // Kept as schema fields for ObjectModel compatibility, but no longer
-        // used as a second source of truth for image loading.
-        return Db::getInstance()->execute(
+        // The shop field exists in both upgraded and freshly-created schemas.
+        // The base-table field exists only on upgraded pre-1.9 schemas:
+        // ObjectModel::createDatabase() correctly puts shop fields exclusively
+        // in the _shop table on a clean install.
+        $database = Db::getInstance();
+        if (!$database->execute(
             'UPDATE `'._DB_PREFIX_.BeesBlogPost::SHOP_TABLE.'` SET `image` = \'\''
-        ) && Db::getInstance()->execute(
+        )) {
+            return false;
+        }
+
+        $legacyBaseImageColumn = (bool) $database->getValue(
+            'SELECT 1 FROM `information_schema`.`columns` WHERE `table_schema` = DATABASE()'.
+            ' AND `table_name` = \''.pSQL(_DB_PREFIX_.BeesBlogPost::TABLE).'\''.
+            ' AND `column_name` = \'image\''
+        );
+
+        return !$legacyBaseImageColumn || $database->execute(
             'UPDATE `'._DB_PREFIX_.BeesBlogPost::TABLE.'` SET `image` = \'\''
         );
     }

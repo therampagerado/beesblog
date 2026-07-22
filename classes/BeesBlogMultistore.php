@@ -225,9 +225,46 @@ class BeesBlogMultistore
     }
 
     /**
-     * Upgrade an existing 1.8 schema in place. Legacy columns are kept in the
-     * base tables because thirty bees ObjectModel mirrors multishop fields
-     * there, while reads are explicitly resolved from the selected shop row.
+     * Create the cumulative current schema for a clean module installation.
+     * Do not replay versioned data migrations here. Create the tables from the
+     * current definitions, explicitly materialize the 1.9 multilang-shop keys
+     * that core's generic creator omits, and add the final 1.9/1.10 image
+     * tables.
+     *
+     * @return bool
+     * @throws PrestaShopException
+     */
+    public static function createCurrentSchema()
+    {
+        static::registerAssociations();
+
+        if (!(BeesBlogPost::createDatabase()
+            && BeesBlogCategory::createDatabase()
+            && BeesBlogImageType::createDatabase()
+            && BeesBlogImage::createDatabase()
+            && BeesBlogResponsiveImage::createDatabase()
+            && BeesBlogResponsiveImageJob::createDatabase())
+        ) {
+            return false;
+        }
+
+        // ObjectModel's generic table creator does not build multilang-shop
+        // columns and composite keys from module definitions. Enforce the
+        // cumulative 1.9 schema explicitly while the new tables are empty.
+        static::ensurePostShopColumns(false);
+        static::ensureCategoryShopColumns(false);
+        static::migrateLanguageTable(BeesBlogPost::TABLE, BeesBlogPost::PRIMARY, 255);
+        static::migrateLanguageTable(BeesBlogCategory::TABLE, BeesBlogCategory::PRIMARY, 256);
+        static::migrateRelatedProducts();
+
+        return true;
+    }
+
+    /**
+     * Upgrade an existing 1.8 schema in place. Legacy columns are left in the
+     * base tables for a non-destructive upgrade, while all current reads and
+     * writes use the selected shop row. Fresh schemas contain shop fields only
+     * in their _shop tables.
      *
      * @return bool
      * @throws PrestaShopException
@@ -241,6 +278,9 @@ class BeesBlogMultistore
         }
         if (!BeesBlogResponsiveImage::createDatabase()) {
             throw new PrestaShopException('Unable to create the responsive blog image manifest table');
+        }
+        if (!BeesBlogResponsiveImageJob::createDatabase()) {
+            throw new PrestaShopException('Unable to create the responsive blog image job table');
         }
         if (!BeesBlogResponsiveImage::installConfiguration()) {
             throw new PrestaShopException('Unable to seed the responsive blog image widths');

@@ -23,6 +23,7 @@ use BeesBlogModule\BeesBlogImage;
 use BeesBlogModule\BeesBlogMultistore;
 use BeesBlogModule\BeesBlogPost;
 use BeesBlogModule\BeesBlogResponsiveImage;
+use BeesBlogModule\BeesBlogResponsiveImageJob;
 
 $db = Db::getInstance();
 $idShop = (int) Context::getContext()->shop->id;
@@ -39,6 +40,7 @@ try {
     Shop::setContext(Shop::CONTEXT_SHOP, $idShop);
     assertTest(BeesBlogMultistore::migrateSchema(), 'responsive image schema migration is idempotent');
     assertTest(tableExistsForTest(BeesBlogResponsiveImage::TABLE), 'responsive image manifest table exists');
+    assertTest(tableExistsForTest(BeesBlogResponsiveImageJob::TABLE), 'responsive image job table exists');
     assertTest(
         Configuration::get(BeesBlogResponsiveImage::CONFIG_WIDTHS) !== false,
         'responsive widths are seeded during migration'
@@ -77,6 +79,15 @@ try {
         0,
         $imageError
     ), 'one uploaded image generates legacy and responsive files');
+
+    $jobWhere = '`entity_type` = \'posts\' AND `id_object` = '.(int) $post->id.
+        ' AND `id_shop` = '.$idShop.' AND `id_lang` = 0';
+    assertTest(
+        $db->getValue(
+            'SELECT `status` FROM `'._DB_PREFIX_.BeesBlogResponsiveImageJob::TABLE.'` WHERE '.$jobWhere
+        ) === BeesBlogResponsiveImageJob::STATUS_COMPLETED,
+        'a successful upload records completed responsive progress'
+    );
 
     $manifest = BeesBlogResponsiveImage::getManifest(
         BeesBlogImage::ENTITY_POST,
@@ -140,6 +151,16 @@ try {
         Configuration::updateValue(BeesBlogResponsiveImage::CONFIG_WIDTHS, '320,640'),
         'merchant breakpoint changes can be saved'
     );
+    assertTest(
+        BeesBlogResponsiveImageJob::synchronize(BeesBlogImage::ENTITY_POST, [$idShop]),
+        'responsive progress synchronizes after a breakpoint change'
+    );
+    assertTest(
+        $db->getValue(
+            'SELECT `status` FROM `'._DB_PREFIX_.BeesBlogResponsiveImageJob::TABLE.'` WHERE '.$jobWhere
+        ) === BeesBlogResponsiveImageJob::STATUS_PENDING,
+        'an outdated responsive set is reported as missing'
+    );
     $currentOriginal = BeesBlogImage::getImagePath(
         BeesBlogImage::ENTITY_POST,
         (int) $post->id,
@@ -159,8 +180,38 @@ try {
     ), 'responsive regeneration completes without errors');
     $regenerated = BeesBlogResponsiveImage::getManifest(BeesBlogImage::ENTITY_POST, (int) $post->id, $idShop, 0);
     assertTest($regenerated['widths'] === '320,640', 'regeneration applies the merchant’s current widths');
+    assertTest(
+        $db->getValue(
+            'SELECT `status` FROM `'._DB_PREFIX_.BeesBlogResponsiveImageJob::TABLE.'` WHERE '.$jobWhere
+        ) === BeesBlogResponsiveImageJob::STATUS_COMPLETED,
+        'successful regeneration updates progress without a page reload'
+    );
     assertTest($regenerated['generation'] !== $manifest['generation'], 'regeneration atomically activates a new generation');
     assertTest(!is_dir($scope), 'the superseded generation directory is removed after activation');
+
+    $temporarilyMissing = $currentOriginal.'.missing-source-test';
+    assertTest(rename($currentOriginal, $temporarilyMissing), 'a missing stored source can be simulated');
+    try {
+        assertTest(
+            BeesBlogResponsiveImageJob::synchronize(BeesBlogImage::ENTITY_POST, [$idShop], true),
+            'responsive progress verifies stored source files'
+        );
+        assertTest(
+            $db->getValue(
+                'SELECT `status` FROM `'._DB_PREFIX_.BeesBlogResponsiveImageJob::TABLE.'` WHERE '.$jobWhere
+            ) === BeesBlogResponsiveImageJob::STATUS_FAILED,
+            'an unreadable stored source is reported as failed'
+        );
+    } finally {
+        rename($temporarilyMissing, $currentOriginal);
+        BeesBlogResponsiveImageJob::markCompleted(
+            BeesBlogImage::ENTITY_POST,
+            (int) $post->id,
+            $idShop,
+            0,
+            BeesBlogResponsiveImage::getConfigurationHash($idShop)
+        );
+    }
 
     echo "RESULT: responsive image integration tests passed\n";
 } catch (Throwable $e) {

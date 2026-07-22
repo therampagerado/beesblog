@@ -18,8 +18,8 @@
  */
 
 /**
- * Runtime smoke checks for shop-scoped front-office loading and back-office
- * list SQL. This script is read-only.
+ * Runtime smoke checks for shop-scoped front-office loading, back-office list
+ * SQL, and the responsive-image progress dashboard.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -114,7 +114,6 @@ try {
     $controllers = [
         'AdminBeesBlogPostController' => 'AdminBeesBlogPostController.php',
         'AdminBeesBlogCategoryController' => 'AdminBeesBlogCategoryController.php',
-        'AdminBeesBlogImagesController' => 'AdminBeesBlogImagesController.php',
     ];
     foreach ($controllers as $class => $file) {
         require_once $root.'/modules/beesblog/controllers/admin/'.$file;
@@ -125,6 +124,16 @@ try {
         $property->setAccessible(true);
         assertSmoke(!$property->getValue($controller), $class.' list SQL executes');
     }
+
+    require_once $root.'/modules/beesblog/controllers/admin/AdminBeesBlogImagesController.php';
+    $_GET['controller'] = 'AdminBeesBlogImagesController';
+    $imagesController = new AdminBeesBlogImagesController();
+    $dashboard = $imagesController->renderList();
+    assertSmoke(
+        strpos($dashboard, 'data-responsive-row="posts"') !== false
+        && strpos($dashboard, 'data-responsive-row="categories"') !== false,
+        'AdminBeesBlogImagesController progress queries and template render'
+    );
 
     echo "RESULT: runtime smoke checks passed\n";
 } catch (Throwable $e) {

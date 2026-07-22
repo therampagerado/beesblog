@@ -6,6 +6,7 @@
  */
 
 use BeesBlogModule\BeesBlogResponsiveImage;
+use BeesBlogModule\BeesBlogResponsiveImageJob;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -22,6 +23,7 @@ if (!defined('_TB_VERSION_')) {
 function upgrade_module_1_10_0($module)
 {
     return BeesBlogResponsiveImage::createDatabase()
+        && BeesBlogResponsiveImageJob::createDatabase()
         && BeesBlogResponsiveImage::installConfiguration()
         && $module->registerHooks();
 }

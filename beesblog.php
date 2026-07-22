@@ -23,6 +23,7 @@ use BeesBlogModule\BeesBlogImageType;
 use BeesBlogModule\BeesBlogMultistore;
 use BeesBlogModule\BeesBlogPost;
 use BeesBlogModule\BeesBlogResponsiveImage;
+use BeesBlogModule\BeesBlogResponsiveImageJob;
 
 if (!defined('_TB_VERSION_')) {
     exit;
@@ -142,11 +143,9 @@ class BeesBlog extends Module
         }
 
         if ($createTables) {
-            if (!(BeesBlogPost::createDatabase()
-                && BeesBlogCategory::createDatabase()
-                && BeesBlogImageType::createDatabase()
-                && BeesBlogMultistore::migrateSchema())
-            ) {
+            // A clean install creates the cumulative current schema directly.
+            // Versioned migration routines are reserved for existing data.
+            if (!BeesBlogMultistore::createCurrentSchema()) {
                 return false;
             }
         }
@@ -319,7 +318,8 @@ class BeesBlog extends Module
         }
 
         if ($removeTables) {
-            if (!(BeesBlogResponsiveImage::dropDatabase()
+            if (!(BeesBlogResponsiveImageJob::dropDatabase()
+                && BeesBlogResponsiveImage::dropDatabase()
                 && BeesBlogPost::dropDatabase()
                 && BeesBlogCategory::dropDatabase()
                 && BeesBlogImageType::dropDatabase()

@@ -192,19 +192,37 @@ fetch-priority hints.
 Merchants can edit the comma-separated candidate widths under **Blog >
 Images > Responsive images**. Widths are validated, sorted, deduplicated, and
 stored through the native global/shop-group/shop Configuration hierarchy.
-Saving settings affects new uploads. The existing **Regenerate images** action
-rebuilds responsive post and/or category images using the current widths and
-the current thirty bees output format. A versioned generation is activated
-only after every file in it has been written and verified.
+Saving settings immediately marks image sets made with different settings as
+missing. The same page shows separate **Posts** and **Categories** progress
+bars with completed, missing, and failed counts. Each row button processes only
+missing, outdated, or failed sets for that source type. **Regenerate all
+responsive images** processes pending work across both types.
+
+The regeneration panel follows the core Images page: each source type has a
+front-positioned regeneration button and progress bar. **Reset generation
+status** marks every source as pending again without deleting the active files,
+allowing a complete repeat run with the same configuration.
+
+Generation uses a persistent queue and processes one source image per AJAX
+request, so it can be paused and resumed without relying on a long PHP request.
+A working versioned generation stays live while its replacement is built and
+is switched only after every candidate and fallback has been verified.
 
 ### Existing images and migration
 
-The 1.10 upgrade is intentionally non-destructive: it creates the manifest
-table and seeds the default widths, but does not rewrite or delete existing
-image files. Until regeneration, existing images are rendered through their
-1.9 named image type without a `source` element. New uploads generate their
-responsive set immediately. This avoids a long-running upgrade and lets the
-merchant choose when storage and CPU are used.
+The 1.10 upgrade is intentionally non-destructive: it creates the manifest and
+generation-queue tables and seeds the default widths, but does not rewrite or
+delete existing image files. Until generation, existing images are rendered
+through their 1.9 named image type without a `source` element. New uploads
+generate their responsive set immediately and update progress automatically.
+This avoids a long-running upgrade and lets the merchant choose when storage
+and CPU are used.
+
+The old fixed image-type records do not define `srcset` candidates. They remain
+stored temporarily for compatibility with old templates and integrations while
+the responsive dashboard is the authoritative migration status. Once support
+for those legacy helpers is removed in a future compatibility cleanup, the old
+definitions and fixed derivatives can be dropped together.
 
 ### Theme overrides
 
@@ -217,12 +235,18 @@ when it creates a new Bees Blog override directory.
 Additional verification commands are:
 
 ```text
+php modules/beesblog/tests/run_fresh_install_smoke.php <thirty-bees-root>
 php modules/beesblog/tests/run_upgrade_smoke.php <thirty-bees-root>
 php modules/beesblog/tests/run_responsive_image_integration.php <thirty-bees-root>
 php modules/beesblog/tests/run_responsive_template_smoke.php <thirty-bees-root>
 php modules/beesblog/tests/run_responsive_admin_smoke.php <thirty-bees-root>
 php modules/beesblog/tests/run_theme_override_frontend_smoke.php <thirty-bees-root> <base-url>
 ```
+
+The fresh-install smoke test is destructive: use a disposable installation.
+It removes Bees Blog, installs it from an empty module schema, and leaves the
+new installation active. It verifies that the clean 1.10 schema includes the
+cumulative 1.9 multistore changes as well as the 1.10 responsive-image state.
 
 ## Roadmap
 
