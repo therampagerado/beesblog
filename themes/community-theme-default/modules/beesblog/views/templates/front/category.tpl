@@ -14,7 +14,7 @@
 {else}
     {if isset($showCategoryImage) && $showCategoryImage && isset($categoryImage) && $categoryImage}
         <div>
-            {include file="./responsive_image.tpl" responsiveImage=$categoryImage responsiveAlt=$category->title}
+            {include file="./responsive_image.tpl" responsiveImage=$categoryImage responsiveAlt=$category->title responsiveContext='full'}
             <em>{$category->description}</em>
             <br><br><br><br>
         </div>

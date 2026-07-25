@@ -187,6 +187,12 @@ templates render a `picture` element containing a width-descriptor `srcset`
 and a single fallback `img` with intrinsic dimensions, lazy/eager loading, and
 fetch-priority hints.
 
+The bundled Community, Niara, and Warehouse templates declare image slots
+from their actual containers, gutters, card grids, and active side columns.
+Lazy images use `sizes="auto"` with those theme calculations as the fallback;
+eager images use the calculations directly. Candidate widths remain image
+resource widths and are intentionally independent of theme layout breakpoints.
+
 ### Configuration and regeneration
 
 Merchants can edit the comma-separated candidate widths under **Blog >

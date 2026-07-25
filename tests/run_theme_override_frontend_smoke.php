@@ -33,10 +33,29 @@ $originalTheme = (int) $db->getValue(
 $installedForTest = [];
 
 try {
-    foreach (['niara', 'community-theme-default'] as $directory) {
+    foreach (['niara', 'community-theme-default', 'warehouse'] as $directory) {
         $theme = Theme::getByDirectory($directory);
         if (!$theme) {
             $theme = Theme::installFromDir(_PS_ALL_THEMES_DIR_.$directory);
+            if (
+                $directory === 'warehouse'
+                && !$theme instanceof Theme
+                && is_dir(_PS_ALL_THEMES_DIR_.$directory)
+            ) {
+                // Warehouse still ships the legacy PrestaShop 1.6 config.xml
+                // format, which current thirty bees intentionally cannot import.
+                // Register the existing directory only for this smoke run.
+                $theme = new Theme();
+                $theme->name = 'Bees Blog smoke: '.$directory;
+                $theme->directory = $directory;
+                $theme->responsive = true;
+                $theme->default_left_column = true;
+                $theme->default_right_column = false;
+                $theme->product_per_page = (int) Configuration::get('PS_PRODUCTS_PER_PAGE');
+                if (!$theme->add()) {
+                    $theme = false;
+                }
+            }
             if ($theme instanceof Theme) {
                 $installedForTest[] = $theme;
             }
@@ -58,7 +77,7 @@ try {
         assertThemeFrontend(strpos($html, 'fetchpriority="high"') !== false, $directory.' prioritizes one above-the-fold blog image');
     }
 
-    echo "RESULT: Niara and Community storefront override checks passed\n";
+    echo "RESULT: bundled storefront override checks passed\n";
 } catch (Throwable $e) {
     fwrite(STDERR, 'FAIL: '.$e->getMessage()."\n".$e->getTraceAsString()."\n");
     $exitCode = 1;

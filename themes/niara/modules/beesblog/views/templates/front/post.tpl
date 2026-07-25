@@ -9,7 +9,7 @@
             {$displayBeesBlogBeforePost}
         </div>
         {if isset($postImage) && $postImage}
-            {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title}
+            {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title responsiveContext='padded'}
         {/if}
         <h4 class="title_block">{$post->title|escape:'htmlall':'UTF-8'}</h4>
         {include file="./post_info.tpl"}

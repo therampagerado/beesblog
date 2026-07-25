@@ -9,7 +9,7 @@
         <div class="block">
             <h1 class="title_block">{$post->title|escape:'htmlall':'UTF-8'}</h1>
             {if isset($postImage) && $postImage}
-                {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title}
+                {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title responsiveContext='full'}
             {/if}
         </div>
         <div class="block">{$post->content}</div>

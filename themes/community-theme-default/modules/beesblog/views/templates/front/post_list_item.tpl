@@ -8,7 +8,7 @@
             <div class="beesblog-post-list-summary">
                 {if isset($postImage) && $postImage}
                     <a title="{$post->title|escape:'htmlall':'UTF-8'}" href="{$postPath|escape:'htmlall':'UTF-8'}">
-                        {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title}
+                        {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title responsiveContext='full'}
                     </a>
                 {/if}
                 <span class="clearfix">{$post->getSummary()|escape:'htmlall':'UTF-8'}&nbsp;</span>

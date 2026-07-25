@@ -497,7 +497,6 @@ class BeesBlogResponsiveImage
         return [
             'modern_type' => $mimeType,
             'srcset' => implode(', ', $srcset),
-            'sizes' => '100vw',
             'fallback_url' => static::getMediaUrl($fallback),
             'width' => (int) $row['fallback_width'],
             'height' => (int) $row['fallback_height'],
@@ -518,7 +517,6 @@ class BeesBlogResponsiveImage
         return [
             'modern_type' => '',
             'srcset' => '',
-            'sizes' => '100vw',
             'fallback_url' => static::getMediaUrl($path),
             'width' => (int) $imageInfo[0],
             'height' => (int) $imageInfo[1],

@@ -1,5 +1,4 @@
 {assign var=postPath value=$post->link}
-{assign var=warehouseCardImageSizes value='(min-width: 1200px) 570px, (min-width: 992px) 470px, (min-width: 768px) 360px, calc(100vw - 30px)'}
 <article class="beesblog-post-card" itemscope="itemscope" itemtype="https://schema.org/BlogPosting">
     <div class="post-item">
         {if isset($postImage) && $postImage}
@@ -7,7 +6,7 @@
                 <a title="{$post->title|escape:'htmlall':'UTF-8'}"
                    href="{$postPath|escape:'htmlall':'UTF-8'}"
                    itemprop="url">
-                    {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title responsiveSizes=$warehouseCardImageSizes}
+                    {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title responsiveContext='card'}
                 </a>
             </div>
         {/if}

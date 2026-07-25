@@ -3,7 +3,7 @@
     <div id="beesblog-post-{$post->id|intval}">
         {if isset($postImage) && $postImage}
             <a title="{$post->title|escape:'htmlall':'UTF-8'}" href="{$postPath|escape:'htmlall':'UTF-8'}">
-                {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title}
+                {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title responsiveContext='padded'}
             </a>
         {/if}
         <h4 class="title_block">

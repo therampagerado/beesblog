@@ -18,6 +18,7 @@
  */
 
 use BeesBlogModule\BeesBlogLanguageLink;
+use BeesBlogModule\BeesBlogFrontLayout;
 use BeesBlogModule\BeesBlogImage;
 use BeesBlogModule\BeesBlogPost;
 use BeesBlogModule\BeesBlogResponsiveImage;
@@ -130,6 +131,7 @@ class BeesBlogPostModuleFrontController extends ModuleFrontController
         $postProperties = array_merge($postProperties, [
             'displayBeesBlogBeforePost' => Hook::exec('displayBeesBlogBeforePost', $postProperties),
             'displayBeesBlogAfterPost' => Hook::exec('displayBeesBlogAfterPost', $postProperties),
+            'beesblogImageLayout' => BeesBlogFrontLayout::getImageLayout($this->context),
         ]);
 
         $this->context->smarty->assign($postProperties);

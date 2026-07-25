@@ -1,4 +1,3 @@
-{assign var=warehouseFullImageSizes value='(min-width: 1200px) 1170px, (min-width: 992px) 970px, (min-width: 768px) 750px, calc(100vw - 30px)'}
 {capture name=path}
     <a href="{$blogHome|escape:'htmlall':'UTF-8'}">{l s='Blog' mod='beesblog'}</a>
     {if $category->id}
@@ -12,7 +11,7 @@
     {if isset($showCategoryImage) && $showCategoryImage}
         {if isset($categoryImage) && $categoryImage}
             <div class="beesblog-category-image">
-                {include file="./responsive_image.tpl" responsiveImage=$categoryImage responsiveAlt=$category->title responsiveSizes=$warehouseFullImageSizes}
+                {include file="./responsive_image.tpl" responsiveImage=$categoryImage responsiveAlt=$category->title responsiveContext='full'}
             </div>
         {/if}
         {if $category->description}

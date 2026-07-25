@@ -18,6 +18,7 @@
  */
 
 use BeesBlogModule\BeesBlogCategory;
+use BeesBlogModule\BeesBlogFrontLayout;
 use BeesBlogModule\BeesBlogImage;
 use BeesBlogModule\BeesBlogLanguageLink;
 use BeesBlogModule\BeesBlogPost;
@@ -134,6 +135,7 @@ class BeesBlogCategoryModuleFrontController extends ModuleFrontController
             'category'             => $category,
             'categoryImage'        => $categoryImage,
             'postImages'           => $postImages,
+            'beesblogImageLayout'  => BeesBlogFrontLayout::getImageLayout($this->context),
             'authorStyle'          => (bool) Configuration::get(BeesBlog::AUTHOR_STYLE),
             'showAuthor'           => (bool) Configuration::get(BeesBlog::SHOW_AUTHOR),
             'showDate'             => (bool) Configuration::get(BeesBlog::SHOW_DATE),

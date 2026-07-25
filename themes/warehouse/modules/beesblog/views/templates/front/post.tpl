@@ -1,5 +1,4 @@
 {assign var=postPath value=$post->link}
-{assign var=warehouseFullImageSizes value='(min-width: 1200px) 1170px, (min-width: 992px) 970px, (min-width: 768px) 750px, calc(100vw - 30px)'}
 {capture name=path}
     <a href="{$blogHome|escape:'htmlall':'UTF-8'}">{l s='Blog' mod='beesblog'}</a>
     <span class="navigation-pipe">{$navigationPipe|escape:'htmlall':'UTF-8'}</span>{$post->title|escape:'htmlall':'UTF-8'}
@@ -13,7 +12,7 @@
 
     {if isset($postImage) && $postImage}
         <div class="post-featured-image">
-            {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title responsiveSizes=$warehouseFullImageSizes}
+            {include file="./responsive_image.tpl" responsiveImage=$postImage responsiveAlt=$post->title responsiveContext='full'}
         </div>
     {/if}
 
