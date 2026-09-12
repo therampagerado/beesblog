@@ -466,7 +466,7 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         }
         $shopIds = BeesBlogMultistore::getSubmittedShopIds($this->table);
         if (!$shopIds) {
-            $this->errors[] = $this->l('No authorized shop is available in the selected context.');
+            $this->errors[] = $this->l('Select at least one authorized shop in the current context.');
             return false;
         }
         $blogCategory->id_shop_list = $shopIds;
@@ -566,7 +566,7 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         }
         $shopIds = BeesBlogMultistore::getSubmittedShopIds($this->table);
         if (!$shopIds) {
-            $this->errors[] = $this->l('No authorized shop is available in the selected context.');
+            $this->errors[] = $this->l('Select at least one authorized shop in the current context.');
             return false;
         }
         $blogCategory->id_shop_list = $shopIds;
@@ -577,6 +577,10 @@ class AdminBeesBlogCategoryController extends ModuleAdminController
         }
 
         if ($blogCategory->update()) {
+            if (!BeesBlogMultistore::synchronizeAssociations($blogCategory, $shopIds)) {
+                $this->errors[] = $this->l('Unable to update shop associations.');
+                return false;
+            }
             if (!$this->processImage($_FILES, $blogCategory->id, $shopIds)) {
                 return false;
             }

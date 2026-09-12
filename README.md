@@ -34,17 +34,17 @@ Office workflows.
 
 ### Back Office shop context
 
-The native Back Office shop context is authoritative:
+The native Back Office shop context limits the available write scope:
 
-- **All Shops** creates, updates, associates, or deletes an item in every shop
-  the employee may access.
-- **Shop group** applies the operation to every authorized shop in that group.
+- **All Shops** allows selecting shops the employee may access.
+- **Shop group** limits the selection to authorized shops in that group.
 - **Single shop** changes only that shop's association and values.
 
 In an All Shops or shop-group edit, values are initially loaded from the first
-associated shop in the active context and are propagated to the complete
-context when saved. The native shop-association tree remains visible, while
-the native context selector defines the write scope.
+associated shop in the active context and are saved to the shops checked in
+the shop-association tree. Unchecked associations in that context are removed;
+associations outside it are preserved. At least one shop must be selected.
+Actions without an association form, such as deletion, use the active context.
 
 Module settings follow the same overwrite rule. Saving in All Shops removes
 older group- and shop-specific Bees Blog configuration rows, so values such as
@@ -70,9 +70,9 @@ unchanged.
 ### Images
 
 The image form contains a default image and optional overrides for each active
-language. Uploads follow the native Back Office shop context: All Shops writes
-independent files for every authorized shop, group context writes the shops in
-that group, and single-shop context writes only that shop.
+language. Uploads on post/category saves write independent files for the shops
+selected in the association tree within the active Back Office context.
+Single-shop context writes only that shop.
 
 Front Office image resolution uses the language override first and then the
 shop default. If neither association has a valid file, no image is returned.

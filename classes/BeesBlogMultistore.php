@@ -93,9 +93,8 @@ class BeesBlogMultistore
     }
 
     /**
-     * The native BO context selector is authoritative. All Shops means all
-     * authorized shops, a group means every authorized shop in that group,
-     * and a shop context means that shop only.
+     * Honor the association tree within the authorized BO context. Actions
+     * without an association form keep their existing context-wide scope.
      *
      * @param string $table
      * @return int[]
@@ -103,7 +102,25 @@ class BeesBlogMultistore
      */
     public static function getSubmittedShopIds($table)
     {
-        return static::getContextShopIds();
+        $contextIds = static::getContextShopIds();
+        if (!Shop::isFeatureActive() || Shop::getContext() === Shop::CONTEXT_SHOP) {
+            return $contextIds;
+        }
+
+        $key = 'checkBoxShopAsso_'.$table;
+        if (Tools::isSubmit($key)) {
+            return array_values(array_intersect(
+                $contextIds,
+                array_map('intval', array_keys(Tools::getArrayValue($key)))
+            ));
+        }
+
+        // Unchecked HTML checkboxes are omitted from the submitted form.
+        if (Tools::isSubmit('submitAdd'.$table) || Tools::isSubmit('submitAdd'.$table.'AndStay')) {
+            return [];
+        }
+
+        return $contextIds;
     }
 
     /**
@@ -155,8 +172,8 @@ class BeesBlogMultistore
         $where = '`'.bqSQL($definition['primary']).'` = '.(int) $object->id.
             ' AND `id_shop` IN ('.implode(', ', array_map('intval', $removeIds)).')';
 
-        if (!empty($definition['multilang_shop'])) {
-            $connection->delete($definition['table'].'_lang', $where);
+        if (!empty($definition['multilang_shop']) && !$connection->delete($definition['table'].'_lang', $where)) {
+            return false;
         }
 
         return $connection->delete($definition['table'].'_shop', $where);

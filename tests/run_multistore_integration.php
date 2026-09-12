@@ -33,6 +33,9 @@ if (!$root || !is_file($root.'/config/config.inc.php')) {
     exit(1);
 }
 
+if (!defined('_PS_ADMIN_DIR_')) {
+    define('_PS_ADMIN_DIR_', $root.'/admin-dev');
+}
 require $root.'/config/config.inc.php';
 require_once $root.'/modules/beesblog/beesblog.php';
 require_once $root.'/modules/beesblog/upgrade/upgrade-1.9.0.php';
@@ -345,6 +348,80 @@ try {
 
     $allShopsCategory = addCategoryForTest($token.'-all-shops-category', $allShopIds);
     $createdCategories[] = (int) $allShopsCategory->id;
+
+    if (Shop::isFeatureActive()) {
+        require_once $root.'/modules/beesblog/controllers/admin/AdminBeesBlogPostController.php';
+        $context = Context::getContext();
+        $originalEmployee = $context->employee;
+        $originalController = $context->controller;
+        $originalRequest = [$_GET, $_POST, $_FILES];
+        try {
+            $context->employee = new Employee((int) $db->getValue(
+                'SELECT `id_employee` FROM `'._DB_PREFIX_.'employee` ORDER BY `id_employee` ASC'
+            ));
+            $associationKey = 'checkBoxShopAsso_'.BeesBlogPost::TABLE;
+            $request = [
+                'submitAdd'.BeesBlogPost::TABLE.'AndStay' => '1',
+                $associationKey => [$testShopId => $sourceGroupId],
+                'id_category' => (int) $allShopsCategory->id,
+                'active' => 1, 'comments_enabled' => 1, 'post_type' => '0', 'position' => 0,
+            ];
+            foreach (Language::getLanguages(false, false, true) as $idLang) {
+                $request['title_'.$idLang] = 'Selected shops '.$token;
+                $request['link_rewrite_'.$idLang] = $token.'-selected-'.$idLang;
+                $request['content_'.$idLang] = 'Selected shop content';
+                $request['lang_active_'.$idLang] = 'on';
+            }
+            $_GET = ['controller' => 'AdminBeesBlogPost'];
+            $_POST = $request;
+            $_FILES = [];
+            assertTest(BeesBlogMultistore::getSubmittedShopIds(BeesBlogPost::TABLE) === [$testShopId], 'association parser uses shop keys, not checkbox values');
+            $controller = new AdminBeesBlogPostController();
+            $context->controller = $controller;
+            $added = $controller->processAdd();
+            $selectedPostId = (int) $db->getValue(
+                'SELECT `'.BeesBlogPost::PRIMARY.'` FROM `'._DB_PREFIX_.BeesBlogPost::LANG_TABLE.'`'.
+                ' WHERE `link_rewrite` = \''.pSQL($request['link_rewrite_'.$languageId]).'\''
+            );
+            if ($selectedPostId) {
+                $createdPosts[] = $selectedPostId;
+            }
+            assertTest($added && $selectedPostId, 'admin creates a post with selected shops: '.implode('; ', $controller->errors));
+            $selectedPost = new BeesBlogPost($selectedPostId, null, $testShopId);
+            assertTest(array_map('intval', $selectedPost->getAssociatedShops()) === [$testShopId], 'reopened post retains only the checked shop');
+
+            $_GET[BeesBlogPost::PRIMARY] = $selectedPostId;
+            foreach ([[$sourceShopId, $testShopId], [$sourceShopId]] as $selection) {
+                $_POST = $request;
+                $_POST[$associationKey] = array_fill_keys($selection, $sourceGroupId);
+                assertTest($controller->processUpdate(), 'admin saves changed associations: '.implode('; ', $controller->errors));
+                $reopened = new BeesBlogPost($selectedPostId, null, $sourceShopId);
+                $associated = array_map('intval', $reopened->getAssociatedShops());
+                sort($associated);
+                sort($selection);
+                assertTest($associated === $selection, 'reopened post reflects added and unchecked shops');
+            }
+            assertTest((int) $db->getValue(
+                'SELECT COUNT(*) FROM `'._DB_PREFIX_.BeesBlogPost::LANG_TABLE.'`'.
+                ' WHERE `'.BeesBlogPost::PRIMARY.'` = '.$selectedPostId.' AND `id_shop` = '.$testShopId
+            ) === 0, 'unchecked shop translations are removed');
+
+            $_POST = $request;
+            unset($_POST[$associationKey]);
+            assertTest(BeesBlogMultistore::getSubmittedShopIds(BeesBlogPost::TABLE) === [], 'unchecking every shop does not fall back to all shops');
+            assertTest(!$controller->processUpdate(), 'admin rejects saving without selected shops');
+            $_POST[$associationKey] = [PHP_INT_MAX => 1];
+            assertTest(BeesBlogMultistore::getSubmittedShopIds(BeesBlogPost::TABLE) === [], 'invalid shops cannot expand the authorized context');
+            Shop::setContext(Shop::CONTEXT_SHOP, $sourceShopId);
+            assertTest(BeesBlogMultistore::getSubmittedShopIds(BeesBlogPost::TABLE) === [$sourceShopId], 'single-shop context remains authoritative');
+        } finally {
+            list($_GET, $_POST, $_FILES) = $originalRequest;
+            $context->employee = $originalEmployee;
+            $context->controller = $originalController;
+            Shop::setContext(Shop::CONTEXT_ALL);
+        }
+    }
+
     $allShopsPost = addPostForTest($token.'-all-shops-post', $allShopsCategory->id, $allShopIds);
     $createdPosts[] = (int) $allShopsPost->id;
     $shopPost = new BeesBlogPost((int) $allShopsPost->id, null, $testShopId);
